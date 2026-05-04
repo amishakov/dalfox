@@ -59,7 +59,10 @@ fn encode_query_component_preserving_pct_into(raw: &str, out: &mut String) {
 /// If more rigorous encoding is desired, enhance or replace this function centrally.
 fn selective_path_segment_encode(raw: &str) -> Cow<'_, str> {
     // Fast path: if no special chars, return borrowed (no allocation)
-    if !raw.bytes().any(|b| matches!(b, b' ' | b'#' | b'?' | b'%' | b'\n' | b'\t' | b'\r')) {
+    if !raw
+        .bytes()
+        .any(|b| matches!(b, b' ' | b'#' | b'?' | b'%' | b'\n' | b'\t' | b'\r'))
+    {
         return Cow::Borrowed(raw);
     }
     let mut out = String::with_capacity(raw.len() + 16);
@@ -160,8 +163,7 @@ pub fn build_injected_url(base: &url::Url, param: &Param, injected: &str) -> Str
                 let original_path = url.path().to_string();
                 if original_path != "/" {
                     let encoded = selective_path_segment_encode(injected);
-                    let mut new_path =
-                        String::with_capacity(original_path.len() + encoded.len());
+                    let mut new_path = String::with_capacity(original_path.len() + encoded.len());
                     let segments = original_path
                         .trim_matches('/')
                         .split('/')
@@ -321,7 +323,9 @@ pub fn build_hpp_url(
             match position {
                 HppPosition::Last => {
                     // safe value first, payload second
-                    if !first { result.push('&'); }
+                    if !first {
+                        result.push('&');
+                    }
                     first = false;
                     encode_query_component_preserving_pct_into(&k, &mut result);
                     result.push('=');
@@ -333,7 +337,9 @@ pub fn build_hpp_url(
                 }
                 HppPosition::First => {
                     // payload first, safe value second
-                    if !first { result.push('&'); }
+                    if !first {
+                        result.push('&');
+                    }
                     first = false;
                     encode_query_component_preserving_pct_into(&k, &mut result);
                     result.push('=');
@@ -345,7 +351,9 @@ pub fn build_hpp_url(
                 }
                 HppPosition::Both => {
                     // payload in both positions
-                    if !first { result.push('&'); }
+                    if !first {
+                        result.push('&');
+                    }
                     first = false;
                     encode_query_component_preserving_pct_into(&k, &mut result);
                     result.push('=');
@@ -357,7 +365,9 @@ pub fn build_hpp_url(
                 }
             }
         } else {
-            if !first { result.push('&'); }
+            if !first {
+                result.push('&');
+            }
             first = false;
             encode_query_component_preserving_pct_into(&k, &mut result);
             result.push('=');
@@ -369,7 +379,9 @@ pub fn build_hpp_url(
     if !replaced {
         match position {
             HppPosition::Last => {
-                if !first { result.push('&'); }
+                if !first {
+                    result.push('&');
+                }
                 encode_query_component_preserving_pct_into(&param.name, &mut result);
                 result.push('=');
                 encode_query_component_preserving_pct_into(safe_value, &mut result);
@@ -379,7 +391,9 @@ pub fn build_hpp_url(
                 encode_query_component_preserving_pct_into(injected, &mut result);
             }
             HppPosition::First => {
-                if !first { result.push('&'); }
+                if !first {
+                    result.push('&');
+                }
                 encode_query_component_preserving_pct_into(&param.name, &mut result);
                 result.push('=');
                 encode_query_component_preserving_pct_into(injected, &mut result);
@@ -389,7 +403,9 @@ pub fn build_hpp_url(
                 encode_query_component_preserving_pct_into(safe_value, &mut result);
             }
             HppPosition::Both => {
-                if !first { result.push('&'); }
+                if !first {
+                    result.push('&');
+                }
                 encode_query_component_preserving_pct_into(&param.name, &mut result);
                 result.push('=');
                 encode_query_component_preserving_pct_into(injected, &mut result);
@@ -418,9 +434,7 @@ pub fn build_hpp_urls(
 ) -> Vec<(String, HppPosition)> {
     [HppPosition::Last, HppPosition::First, HppPosition::Both]
         .iter()
-        .filter_map(|&pos| {
-            build_hpp_url(base, param, injected, pos).map(|url| (url, pos))
-        })
+        .filter_map(|&pos| build_hpp_url(base, param, injected, pos).map(|url| (url, pos)))
         .collect()
 }
 
@@ -443,9 +457,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let out = build_injected_url(&base, &param, "PAY");
         assert!(out.contains("a=PAY"));
@@ -462,9 +476,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let out = build_injected_url(&base, &param, "X");
         assert!(out.contains("q=X"));
@@ -480,9 +494,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let out = build_injected_url(&base, &param, "%3Cimg%20src=x%3E");
         assert!(out.contains("q=%3Cimg%20src%3Dx%3E"));
@@ -499,9 +513,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let out = build_injected_url(&base, &param, "PAY LOAD");
         assert!(out.contains("q=PAY%20LOAD"));
@@ -517,9 +531,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let out = build_injected_url(&base, &param, "PAY LOAD");
         // space should be %20
@@ -536,9 +550,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let out = build_injected_url(&base, &param, "X");
         assert_eq!(out, "https://example.com/a");
@@ -554,9 +568,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let out = build_injected_url(&base, &param, "IGNORED");
         assert_eq!(out, base.as_str());

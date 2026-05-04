@@ -39,7 +39,8 @@ pub async fn verify_dom_xss_light_with_client(
             crate::utils::apply_header_overrides(rb, &[(param.name.clone(), payload.to_string())])
         }
         Location::Body => {
-            let parsed_url = param.form_action_url
+            let parsed_url = param
+                .form_action_url
                 .as_ref()
                 .and_then(|u| url::Url::parse(u).ok())
                 .unwrap_or_else(|| target.url.clone());
@@ -73,7 +74,8 @@ pub async fn verify_dom_xss_light_with_client(
             crate::utils::build_request(client, target, method, parsed_url, body)
         }
         Location::JsonBody => {
-            let parsed_url = param.form_action_url
+            let parsed_url = param
+                .form_action_url
                 .as_ref()
                 .and_then(|u| url::Url::parse(u).ok())
                 .unwrap_or_else(|| target.url.clone());
@@ -96,7 +98,8 @@ pub async fn verify_dom_xss_light_with_client(
             rb.header("Content-Type", "application/json")
         }
         Location::MultipartBody => {
-            let parsed_url = param.form_action_url
+            let parsed_url = param
+                .form_action_url
                 .as_ref()
                 .and_then(|u| url::Url::parse(u).ok())
                 .unwrap_or_else(|| target.url.clone());
@@ -104,8 +107,12 @@ pub async fn verify_dom_xss_light_with_client(
             if let Some(ref data) = target.data {
                 for pair in data.split('&') {
                     if let Some((k, v)) = pair.split_once('=') {
-                        let k = urlencoding::decode(k).unwrap_or(std::borrow::Cow::Borrowed(k)).to_string();
-                        let v = urlencoding::decode(v).unwrap_or(std::borrow::Cow::Borrowed(v)).to_string();
+                        let k = urlencoding::decode(k)
+                            .unwrap_or(std::borrow::Cow::Borrowed(k))
+                            .to_string();
+                        let v = urlencoding::decode(v)
+                            .unwrap_or(std::borrow::Cow::Borrowed(v))
+                            .to_string();
                         if k == param.name {
                             form = form.text(k, payload.to_string());
                         } else {
@@ -116,8 +123,7 @@ pub async fn verify_dom_xss_light_with_client(
             } else {
                 form = form.text(param.name.clone(), payload.to_string());
             }
-            crate::utils::build_request(client, target, method, parsed_url, None)
-                .multipart(form)
+            crate::utils::build_request(client, target, method, parsed_url, None).multipart(form)
         }
         _ => {
             let inject_url =
@@ -130,12 +136,14 @@ pub async fn verify_dom_xss_light_with_client(
     let mut note: Option<String> = None;
     if let Ok(resp) = request.send().await {
         // Extract needed header values without cloning the entire HeaderMap
-        let ct = resp.headers()
+        let ct = resp
+            .headers()
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
-        let csp = resp.headers()
+        let csp = resp
+            .headers()
             .get("Content-Security-Policy")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
@@ -199,9 +207,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         }
     }
 

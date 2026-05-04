@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
-use dalfox::{DEBUG, cmd, config, mcp, utils};
 use dalfox::cmd::scan::ScanOutcome;
+use dalfox::{DEBUG, cmd, config, mcp, utils};
 
 #[derive(Parser)]
 #[command(name = "dalfox")]

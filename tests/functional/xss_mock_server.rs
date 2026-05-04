@@ -1096,8 +1096,7 @@ async fn run_scan_test(
     scan::run_scan(&args).await;
 
     let content = std::fs::read_to_string(&out_path).expect("scan should write JSON output file");
-    let v: serde_json::Value =
-        serde_json::from_str(&content).expect("output should be valid JSON");
+    let v: serde_json::Value = serde_json::from_str(&content).expect("output should be valid JSON");
 
     // JSON output is now wrapped: {"meta": {...}, "findings": [...]}
     v["findings"]

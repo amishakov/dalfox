@@ -44,8 +44,12 @@ impl FindingType {
     pub fn long_description(&self) -> &'static str {
         match self {
             FindingType::Verified => "Verified XSS - payload confirmed executed in parsed DOM",
-            FindingType::AstDetected => "AST-detected DOM XSS - identified via static JavaScript analysis, needs runtime confirmation",
-            FindingType::Reflected => "Reflected XSS - payload appears in HTTP response but DOM execution not confirmed",
+            FindingType::AstDetected => {
+                "AST-detected DOM XSS - identified via static JavaScript analysis, needs runtime confirmation"
+            }
+            FindingType::Reflected => {
+                "Reflected XSS - payload appears in HTTP response but DOM execution not confirmed"
+            }
         }
     }
 }
@@ -266,8 +270,14 @@ impl Result {
         out.push_str("# Dalfox Scan Results\n\n");
 
         // Add summary
-        let v_count = results.iter().filter(|r| r.result_type == FindingType::Verified).count();
-        let r_count = results.iter().filter(|r| r.result_type == FindingType::Reflected).count();
+        let v_count = results
+            .iter()
+            .filter(|r| r.result_type == FindingType::Verified)
+            .count();
+        let r_count = results
+            .iter()
+            .filter(|r| r.result_type == FindingType::Reflected)
+            .count();
         out.push_str("## Summary\n\n");
         let _ = writeln!(out, "- **Total Findings**: {}", results.len());
         let _ = writeln!(out, "- **Vulnerabilities (V)**: {}", v_count);

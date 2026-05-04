@@ -336,9 +336,7 @@ async fn safe_truncated(Query(p): Query<HashMap<String, String>>) -> impl IntoRe
 
 /// Static page — no reflection at all
 async fn safe_static() -> impl IntoResponse {
-    Html(
-        r#"<!DOCTYPE html><html><body><p>Hello, world!</p></body></html>"#.to_string(),
-    )
+    Html(r#"<!DOCTYPE html><html><body><p>Hello, world!</p></body></html>"#.to_string())
 }
 
 // ===========================================================================
@@ -446,10 +444,7 @@ async fn run_scan_and_collect(mut args: ScanArgs) -> Vec<serde_json::Value> {
     };
 
     // JSON output is now wrapped: {"meta": {...}, "findings": [...]}
-    v["findings"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
+    v["findings"].as_array().cloned().unwrap_or_default()
 }
 
 /// Assert at least one finding exists, with a descriptive label on failure.
@@ -471,7 +466,9 @@ fn assert_not_detected(findings: &[serde_json::Value], context: &str) {
 
 /// Assert at least one finding of the given short type ("V", "R", "A").
 fn assert_has_type(findings: &[serde_json::Value], expected: &str, context: &str) {
-    let any = findings.iter().any(|f| f["type"].as_str() == Some(expected));
+    let any = findings
+        .iter()
+        .any(|f| f["type"].as_str() == Some(expected));
     assert!(
         any,
         "[{context}] expected at least one '{expected}' finding, got: {:?}",
@@ -555,7 +552,10 @@ async fn test_reflected_attr_unquoted() {
     let addr = start_test_server().await;
     let mut args = base_scan_args();
     args.targets = vec![format!("http://{addr}/attr/unquoted?q=test")];
-    assert_detected(&run_scan_and_collect(args).await, "unquoted attribute value");
+    assert_detected(
+        &run_scan_and_collect(args).await,
+        "unquoted attribute value",
+    );
 }
 
 #[tokio::test]
@@ -608,10 +608,7 @@ async fn test_reflected_js_double_quote_string() {
     let addr = start_test_server().await;
     let mut args = base_scan_args();
     args.targets = vec![format!("http://{addr}/js/dq?q=test")];
-    assert_detected(
-        &run_scan_and_collect(args).await,
-        "JS double-quoted string",
-    );
+    assert_detected(&run_scan_and_collect(args).await, "JS double-quoted string");
 }
 
 #[tokio::test]
@@ -619,10 +616,7 @@ async fn test_reflected_js_single_quote_string() {
     let addr = start_test_server().await;
     let mut args = base_scan_args();
     args.targets = vec![format!("http://{addr}/js/sq?q=test")];
-    assert_detected(
-        &run_scan_and_collect(args).await,
-        "JS single-quoted string",
-    );
+    assert_detected(&run_scan_and_collect(args).await, "JS single-quoted string");
 }
 
 #[tokio::test]
@@ -832,10 +826,7 @@ async fn test_safe_stripped_no_fp() {
     let addr = start_test_server().await;
     let mut args = base_scan_args();
     args.targets = vec![format!("http://{addr}/safe/stripped?q=test")];
-    assert_not_detected(
-        &run_scan_and_collect(args).await,
-        "alphanumeric-only strip",
-    );
+    assert_not_detected(&run_scan_and_collect(args).await, "alphanumeric-only strip");
 }
 
 #[tokio::test]
@@ -854,5 +845,8 @@ async fn test_safe_static_no_fp() {
     let addr = start_test_server().await;
     let mut args = base_scan_args();
     args.targets = vec![format!("http://{addr}/safe/static?q=test")];
-    assert_not_detected(&run_scan_and_collect(args).await, "static page, no reflection");
+    assert_not_detected(
+        &run_scan_and_collect(args).await,
+        "static page, no reflection",
+    );
 }

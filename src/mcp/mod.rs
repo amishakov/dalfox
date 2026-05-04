@@ -53,10 +53,7 @@ use crate::{
 /// Render timestamp/duration fields into the given JSON object.
 fn write_timestamps(job: &Job, out: &mut serde_json::Map<String, serde_json::Value>) {
     out.insert("queued_at_ms".into(), serde_json::json!(job.queued_at_ms));
-    out.insert(
-        "started_at_ms".into(),
-        serde_json::json!(job.started_at_ms),
-    );
+    out.insert("started_at_ms".into(), serde_json::json!(job.started_at_ms));
     out.insert(
         "finished_at_ms".into(),
         serde_json::json!(job.finished_at_ms),
@@ -261,10 +258,9 @@ impl DalfoxMcp {
 
         let sanitized = {
             let locked = results_arc.lock().await;
-            progress.findings_so_far.store(
-                locked.len() as u64,
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            progress
+                .findings_so_far
+                .store(locked.len() as u64, std::sync::atomic::Ordering::Relaxed);
             locked
                 .iter()
                 .map(|r| r.to_sanitized(include_request, include_response))
@@ -291,7 +287,11 @@ impl DalfoxMcp {
             }
         }
 
-        let status_label = if was_cancelled { "cancelled" } else { "finished" };
+        let status_label = if was_cancelled {
+            "cancelled"
+        } else {
+            "finished"
+        };
         Self::log(
             "JOB",
             &format!("scan {} scan_id={} url={}", status_label, scan_id, url),
@@ -729,11 +729,8 @@ Call this repeatedly until status is 'done', 'error', or 'cancelled'."
 
         match job_opt {
             Some(job) => {
-                let (results_slice, pagination) = paginate_results(
-                    job.results.as_deref(),
-                    params.offset,
-                    params.limit,
-                );
+                let (results_slice, pagination) =
+                    paginate_results(job.results.as_deref(), params.offset, params.limit);
                 let mut out = serde_json::json!({
                     "scan_id": pid,
                     "target": job.target_url,
@@ -749,37 +746,58 @@ Call this repeatedly until status is 'done', 'error', or 'cancelled'."
                     out["error_message"] = serde_json::json!(err_msg);
                 }
                 // Include progress info when scan is running, done, or cancelled
-                if matches!(job.status, JobStatus::Running | JobStatus::Done | JobStatus::Cancelled) {
-                    let params_total = job.progress.params_total.load(std::sync::atomic::Ordering::Relaxed);
-                    let params_tested = job.progress.params_tested.load(std::sync::atomic::Ordering::Relaxed);
-                    let requests_sent = job.progress.requests_sent.load(std::sync::atomic::Ordering::Relaxed);
-                    let findings_so_far = job.progress.findings_so_far.load(std::sync::atomic::Ordering::Relaxed);
+                if matches!(
+                    job.status,
+                    JobStatus::Running | JobStatus::Done | JobStatus::Cancelled
+                ) {
+                    let params_total = job
+                        .progress
+                        .params_total
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let params_tested = job
+                        .progress
+                        .params_tested
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let requests_sent = job
+                        .progress
+                        .requests_sent
+                        .load(std::sync::atomic::Ordering::Relaxed);
+                    let findings_so_far = job
+                        .progress
+                        .findings_so_far
+                        .load(std::sync::atomic::Ordering::Relaxed);
 
                     // Estimate completion percentage from params tested vs total
-                    let estimated_completion_pct: u32 = if matches!(job.status, JobStatus::Done | JobStatus::Cancelled) {
-                        if job.status == JobStatus::Done { 100 } else if params_total > 0 {
-                            ((params_tested as f64 / params_total as f64) * 100.0) as u32
-                        } else { 0 }
-                    } else if params_total > 0 {
-                        ((params_tested as f64 / params_total as f64) * 100.0).min(99.0) as u32
-                    } else {
-                        0
-                    };
+                    let estimated_completion_pct: u32 =
+                        if matches!(job.status, JobStatus::Done | JobStatus::Cancelled) {
+                            if job.status == JobStatus::Done {
+                                100
+                            } else if params_total > 0 {
+                                ((params_tested as f64 / params_total as f64) * 100.0) as u32
+                            } else {
+                                0
+                            }
+                        } else if params_total > 0 {
+                            ((params_tested as f64 / params_total as f64) * 100.0).min(99.0) as u32
+                        } else {
+                            0
+                        };
 
                     // Suggest poll interval based on progress:
                     // - queued/early: poll every 2s
                     // - mid-scan: poll every 3s
                     // - near completion (>80%): poll every 1s
                     // - done/cancelled: no more polling needed
-                    let suggested_poll_interval_ms: u64 = if matches!(job.status, JobStatus::Done | JobStatus::Cancelled) {
-                        0
-                    } else if estimated_completion_pct > 80 {
-                        1000
-                    } else if estimated_completion_pct > 10 {
-                        3000
-                    } else {
-                        2000
-                    };
+                    let suggested_poll_interval_ms: u64 =
+                        if matches!(job.status, JobStatus::Done | JobStatus::Cancelled) {
+                            0
+                        } else if estimated_completion_pct > 80 {
+                            1000
+                        } else if estimated_completion_pct > 10 {
+                            3000
+                        } else {
+                            2000
+                        };
 
                     out["progress"] = serde_json::json!({
                         "params_total": params_total,
@@ -842,7 +860,7 @@ status, and result_count."
                     "result_count": job.results.as_ref().map(|r| r.len()).unwrap_or(0)
                 });
                 if let Some(obj) = entry.as_object_mut() {
-                    write_timestamps(&job, obj);
+                    write_timestamps(job, obj);
                 }
                 entry
             })
@@ -993,15 +1011,21 @@ Use before scan_with_dalfox to estimate scan impact and verify reachability."
                             .iter()
                             .map(|p| {
                                 let payload_count = if let Some(ctx) = &p.injection_context {
-                                    crate::scanning::xss_common::get_dynamic_payloads(ctx, &scan_args)
-                                        .unwrap_or_else(|_| vec![])
-                                        .len()
+                                    crate::scanning::xss_common::get_dynamic_payloads(
+                                        ctx, &scan_args,
+                                    )
+                                    .unwrap_or_else(|_| vec![])
+                                    .len()
                                 } else {
-                                    let html_len = crate::payload::get_dynamic_xss_html_payloads().len() * enc_factor;
-                                    let js_len = crate::payload::XSS_JAVASCRIPT_PAYLOADS.len() * enc_factor;
+                                    let html_len = crate::payload::get_dynamic_xss_html_payloads()
+                                        .len()
+                                        * enc_factor;
+                                    let js_len =
+                                        crate::payload::XSS_JAVASCRIPT_PAYLOADS.len() * enc_factor;
                                     html_len + js_len
                                 };
-                                estimated_requests = estimated_requests.saturating_add(payload_count);
+                                estimated_requests =
+                                    estimated_requests.saturating_add(payload_count);
                                 serde_json::json!({
                                     "name": p.name,
                                     "location": format!("{:?}", p.location),
@@ -1067,7 +1091,8 @@ still be retrieved via get_results_dalfox."
             Some(job) => {
                 let previous_status = job.status.clone();
                 // Signal cancellation to the running scan
-                job.cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                job.cancelled
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 // Mark as cancelled immediately for both queued and running scans.
                 // For running scans, the background task will exit at the next
                 // cancellation checkpoint and store partial results.
@@ -1367,7 +1392,10 @@ mod tests {
         let jobs = mcp.jobs.lock().await;
         let job = jobs.get(&scan_id).expect("job exists");
         assert_eq!(job.status, JobStatus::Error);
-        assert!(job.error_message.is_some(), "error_message should be set on failure");
+        assert!(
+            job.error_message.is_some(),
+            "error_message should be set on failure"
+        );
         assert!(
             job.error_message.as_ref().unwrap().contains("parse_target"),
             "error_message should describe the failure"
@@ -1654,10 +1682,18 @@ mod tests {
         {
             let mut jobs = mcp.jobs.lock().await;
             let job = test_job(JobStatus::Running, None);
-            job.progress.params_total.store(10, std::sync::atomic::Ordering::Relaxed);
-            job.progress.params_tested.store(5, std::sync::atomic::Ordering::Relaxed);
-            job.progress.requests_sent.store(100, std::sync::atomic::Ordering::Relaxed);
-            job.progress.findings_so_far.store(2, std::sync::atomic::Ordering::Relaxed);
+            job.progress
+                .params_total
+                .store(10, std::sync::atomic::Ordering::Relaxed);
+            job.progress
+                .params_tested
+                .store(5, std::sync::atomic::Ordering::Relaxed);
+            job.progress
+                .requests_sent
+                .store(100, std::sync::atomic::Ordering::Relaxed);
+            job.progress
+                .findings_so_far
+                .store(2, std::sync::atomic::Ordering::Relaxed);
             jobs.insert("progress-test".to_string(), job);
         }
 
@@ -1683,8 +1719,12 @@ mod tests {
         {
             let mut jobs = mcp.jobs.lock().await;
             let job = test_job(JobStatus::Done, Some(vec![]));
-            job.progress.params_total.store(10, std::sync::atomic::Ordering::Relaxed);
-            job.progress.params_tested.store(10, std::sync::atomic::Ordering::Relaxed);
+            job.progress
+                .params_total
+                .store(10, std::sync::atomic::Ordering::Relaxed);
+            job.progress
+                .params_tested
+                .store(10, std::sync::atomic::Ordering::Relaxed);
             jobs.insert("done-progress-test".to_string(), job);
         }
 
@@ -1725,7 +1765,10 @@ mod tests {
         let mcp = DalfoxMcp::new();
         {
             let mut jobs = mcp.jobs.lock().await;
-            jobs.insert("ts-list".to_string(), test_job(JobStatus::Done, Some(vec![])));
+            jobs.insert(
+                "ts-list".to_string(),
+                test_job(JobStatus::Done, Some(vec![])),
+            );
         }
         let resp = mcp
             .list_scans_dalfox(Parameters(ListScansDalfoxParams { status: None }))
@@ -1742,7 +1785,10 @@ mod tests {
         let mcp = DalfoxMcp::new();
         {
             let mut jobs = mcp.jobs.lock().await;
-            jobs.insert("done-del".to_string(), test_job(JobStatus::Done, Some(vec![])));
+            jobs.insert(
+                "done-del".to_string(),
+                test_job(JobStatus::Done, Some(vec![])),
+            );
         }
         let resp = mcp
             .delete_scan_dalfox(Parameters(DeleteScanDalfoxParams {
@@ -1863,10 +1909,7 @@ mod tests {
         let findings: Vec<SanitizedResult> = (0..5).map(dummy_finding).collect();
         {
             let mut jobs = mcp.jobs.lock().await;
-            jobs.insert(
-                "pag".to_string(),
-                test_job(JobStatus::Done, Some(findings)),
-            );
+            jobs.insert("pag".to_string(), test_job(JobStatus::Done, Some(findings)));
         }
         let resp = mcp
             .get_results_dalfox(Parameters(GetResultsDalfoxParams {
@@ -1979,8 +2022,14 @@ mod tests {
         mcp.purge_expired_jobs().await;
 
         let jobs = mcp.jobs.lock().await;
-        assert!(!jobs.contains_key("old"), "old terminal job should be purged");
+        assert!(
+            !jobs.contains_key("old"),
+            "old terminal job should be purged"
+        );
         assert!(jobs.contains_key("fresh"), "fresh terminal job must remain");
-        assert!(jobs.contains_key("active"), "active job must never be purged");
+        assert!(
+            jobs.contains_key("active"),
+            "active job must never be purged"
+        );
     }
 }

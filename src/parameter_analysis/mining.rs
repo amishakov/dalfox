@@ -141,7 +141,10 @@ pub fn detect_injection_context_with_marker(text: &str, marker: &str) -> Injecti
     {
         let sel = selectors::script();
         for el in document.select(sel) {
-            let s = el.text().fold(String::new(), |mut acc, t| { acc.push_str(t); acc });
+            let s = el.text().fold(String::new(), |mut acc, t| {
+                acc.push_str(t);
+                acc
+            });
             if s.contains(marker) {
                 let delim = infer_quote_delimiter(text, marker);
                 return InjectionContext::Javascript(delim);
@@ -153,7 +156,10 @@ pub fn detect_injection_context_with_marker(text: &str, marker: &str) -> Injecti
     {
         let sel = selectors::style();
         for el in document.select(sel) {
-            let s = el.text().fold(String::new(), |mut acc, t| { acc.push_str(t); acc });
+            let s = el.text().fold(String::new(), |mut acc, t| {
+                acc.push_str(t);
+                acc
+            });
             if s.contains(marker) {
                 let delim = infer_quote_delimiter(text, marker);
                 return InjectionContext::Css(delim);
@@ -186,7 +192,10 @@ pub fn detect_injection_context_with_marker(text: &str, marker: &str) -> Injecti
             if tag.eq_ignore_ascii_case("script") || tag.eq_ignore_ascii_case("style") {
                 continue;
             }
-            let s = el.text().fold(String::new(), |mut acc, t| { acc.push_str(t); acc });
+            let s = el.text().fold(String::new(), |mut acc, t| {
+                acc.push_str(t);
+                acc
+            });
             if s.contains(marker) {
                 return InjectionContext::Html(None);
             }
@@ -310,9 +319,17 @@ pub async fn probe_dictionary_params(
             let stats_clone = stats.clone();
 
             let handle = tokio::spawn(async move {
-                let permit = semaphore_clone.acquire().await.expect("acquire semaphore permit");
-                let request =
-                    crate::utils::build_request(&client_clone, &target_clone, parsed_method, url, data.clone());
+                let permit = semaphore_clone
+                    .acquire()
+                    .await
+                    .expect("acquire semaphore permit");
+                let request = crate::utils::build_request(
+                    &client_clone,
+                    &target_clone,
+                    parsed_method,
+                    url,
+                    data.clone(),
+                );
 
                 let resp = request.send().await;
                 crate::tick_request_count();
@@ -362,9 +379,9 @@ pub async fn probe_dictionary_params(
                                 ),
                                 valid_specials: None,
                                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                                pre_encoding: None,
+                                form_action_url: None,
+                                form_origin_url: None,
                             });
                             if !silence {
                                 eprintln!(
@@ -398,9 +415,9 @@ pub async fn probe_dictionary_params(
                                     injection_context: Some(context),
                                     valid_specials: Some(valid),
                                     invalid_specials: Some(invalid),
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                                    pre_encoding: None,
+                                    form_action_url: None,
+                                    form_origin_url: None,
                                 });
                                 if !silence {
                                     eprintln!(
@@ -479,9 +496,9 @@ pub async fn probe_dictionary_params(
                 injection_context: orig.injection_context.clone(),
                 valid_specials: orig.valid_specials.clone(),
                 invalid_specials: orig.invalid_specials.clone(),
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             });
         } else {
             guard.push(Param {
@@ -491,9 +508,9 @@ pub async fn probe_dictionary_params(
                 injection_context: Some(crate::parameter_analysis::InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             });
         }
     }
@@ -571,7 +588,10 @@ pub async fn probe_body_params(
             let stats_clone = stats.clone();
 
             let handle = tokio::spawn(async move {
-                let permit = semaphore_clone.acquire().await.expect("acquire semaphore permit");
+                let permit = semaphore_clone
+                    .acquire()
+                    .await
+                    .expect("acquire semaphore permit");
                 let m = parsed_method;
                 let base =
                     crate::utils::build_request(&client_clone, &target_clone, m, url, Some(body));
@@ -603,9 +623,9 @@ pub async fn probe_body_params(
                                 injection_context: Some(context),
                                 valid_specials: Some(valid),
                                 invalid_specials: Some(invalid),
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                                pre_encoding: None,
+                                form_action_url: None,
+                                form_origin_url: None,
                             });
                             if !silence {
                                 eprintln!(
@@ -787,7 +807,10 @@ pub async fn probe_response_id_params(
             let stats_clone = stats.clone();
 
             let handle = tokio::spawn(async move {
-                let permit = semaphore_clone.acquire().await.expect("acquire semaphore permit");
+                let permit = semaphore_clone
+                    .acquire()
+                    .await
+                    .expect("acquire semaphore permit");
                 let m = parsed_method;
                 let request =
                     crate::utils::build_request(&client_clone, &target_clone, m, url, data.clone());
@@ -810,45 +833,45 @@ pub async fn probe_response_id_params(
                         return discovered;
                     }
                     if let Ok(text) = resp.text().await {
-                    let mut st = stats_clone.lock().await;
-                    st.record_attempt();
-                    if text.contains(crate::scanning::markers::open_marker()) {
-                        st.record_reflection();
-                        if !st.collapsed {
-                            let context = detect_injection_context(&text);
-                            let (valid, invalid) =
-                                crate::parameter_analysis::classify_special_chars(&text);
-                            // Store discovered Param for return (batched later)
-                            discovered = Some(Param {
-                                name: param.clone(),
-                                value: crate::scanning::markers::open_marker().to_string(),
-                                location: crate::parameter_analysis::Location::Query,
-                                injection_context: Some(context),
-                                valid_specials: Some(valid),
-                                invalid_specials: Some(invalid),
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
-                            });
-                            if !silence {
-                                eprintln!(
-                                    "Discovered DOM param: {} (EWMA {:.2}, {}/{})",
-                                    param, st.ewma_ratio, st.reflections, st.attempts
-                                );
-                            }
-                            if st.should_collapse() {
-                                st.collapsed = true;
+                        let mut st = stats_clone.lock().await;
+                        st.record_attempt();
+                        if text.contains(crate::scanning::markers::open_marker()) {
+                            st.record_reflection();
+                            if !st.collapsed {
+                                let context = detect_injection_context(&text);
+                                let (valid, invalid) =
+                                    crate::parameter_analysis::classify_special_chars(&text);
+                                // Store discovered Param for return (batched later)
+                                discovered = Some(Param {
+                                    name: param.clone(),
+                                    value: crate::scanning::markers::open_marker().to_string(),
+                                    location: crate::parameter_analysis::Location::Query,
+                                    injection_context: Some(context),
+                                    valid_specials: Some(valid),
+                                    invalid_specials: Some(invalid),
+                                    pre_encoding: None,
+                                    form_action_url: None,
+                                    form_origin_url: None,
+                                });
                                 if !silence {
                                     eprintln!(
-                                        "[mining-collapse] DOM mining collapsed at EWMA {:.2} after {} attempts ({} reflections)",
-                                        st.ewma_ratio, st.attempts, st.reflections
+                                        "Discovered DOM param: {} (EWMA {:.2}, {}/{})",
+                                        param, st.ewma_ratio, st.reflections, st.attempts
                                     );
                                 }
+                                if st.should_collapse() {
+                                    st.collapsed = true;
+                                    if !silence {
+                                        eprintln!(
+                                            "[mining-collapse] DOM mining collapsed at EWMA {:.2} after {} attempts ({} reflections)",
+                                            st.ewma_ratio, st.attempts, st.reflections
+                                        );
+                                    }
+                                }
                             }
+                        } else {
+                            st.record_non_reflection();
                         }
-                    } else {
-                        st.record_non_reflection();
-                    }
                     }
                 }
                 if delay > 0 {
@@ -995,7 +1018,10 @@ pub async fn probe_json_body_params(
         let base_json_clone = base_json.clone();
 
         let handle = tokio::spawn(async move {
-            let permit = semaphore_clone.acquire().await.expect("acquire semaphore permit");
+            let permit = semaphore_clone
+                .acquire()
+                .await
+                .expect("acquire semaphore permit");
 
             // Build mutated JSON with this key set to marker
             let mut root = base_json_clone;
@@ -1020,8 +1046,13 @@ pub async fn probe_json_body_params(
                 )
             });
 
-            let base =
-                crate::utils::build_request(&client_clone, &target_clone, parsed_method, url, Some(body));
+            let base = crate::utils::build_request(
+                &client_clone,
+                &target_clone,
+                parsed_method,
+                url,
+                Some(body),
+            );
             let overrides = vec![("Content-Type".to_string(), "application/json".to_string())];
             let request = crate::utils::apply_header_overrides(base, &overrides);
 
@@ -1047,9 +1078,9 @@ pub async fn probe_json_body_params(
                             injection_context: Some(context),
                             valid_specials: Some(valid),
                             invalid_specials: Some(invalid),
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                            pre_encoding: None,
+                            form_action_url: None,
+                            form_origin_url: None,
                         });
                         if !silence {
                             eprintln!(
@@ -1123,9 +1154,9 @@ pub async fn probe_json_body_params(
                 injection_context: orig.injection_context.clone(),
                 valid_specials: orig.valid_specials.clone(),
                 invalid_specials: orig.invalid_specials.clone(),
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             });
         } else {
             guard.push(Param {
@@ -1135,9 +1166,9 @@ pub async fn probe_json_body_params(
                 injection_context: Some(crate::parameter_analysis::InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             });
         }
     }

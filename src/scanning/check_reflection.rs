@@ -295,8 +295,10 @@ pub enum ReflectionKind {
 fn decode_html_entities(input: &str) -> String {
     // Match patterns like &#xHH; or &#xHHHH; or &#DDDD; (hex 'x' is case-insensitive)
     // We purposely limit to reasonable length to avoid catastrophic replacements.
-    let re =
-        ENTITY_REGEX.get_or_init(|| Regex::new(r"&#([xX][0-9a-fA-F]{2,6}|[0-9]{2,6});").expect("entity regex pattern must be valid"));
+    let re = ENTITY_REGEX.get_or_init(|| {
+        Regex::new(r"&#([xX][0-9a-fA-F]{2,6}|[0-9]{2,6});")
+            .expect("entity regex pattern must be valid")
+    });
     let mut out = String::with_capacity(input.len());
     let mut last = 0;
     for m in re.find_iter(input) {
@@ -322,8 +324,10 @@ fn decode_html_entities(input: &str) -> String {
 
     // Handle a minimal set of named entities commonly encountered in XSS contexts.
     // Keep decoding narrow but case-insensitive (e.g., &LT; / &Lt;).
-    let named_re =
-        NAMED_ENTITY_REGEX.get_or_init(|| Regex::new(r"(?i)&(?:lt|gt|amp|quot|apos);").expect("named entity regex pattern must be valid"));
+    let named_re = NAMED_ENTITY_REGEX.get_or_init(|| {
+        Regex::new(r"(?i)&(?:lt|gt|amp|quot|apos);")
+            .expect("named entity regex pattern must be valid")
+    });
     named_re
         .replace_all(&out, |caps: &regex::Captures| {
             match caps[0].to_ascii_lowercase().as_str() {
@@ -542,13 +546,17 @@ async fn fetch_injection_response_with_client(
                 target.data.clone(),
             );
             // Override/add the header with the encoded payload value
-            crate::utils::apply_header_overrides(rb, &[(param.name.clone(), encoded_payload.to_string())])
+            crate::utils::apply_header_overrides(
+                rb,
+                &[(param.name.clone(), encoded_payload.to_string())],
+            )
         }
         Location::Body => {
             // Body injection: use form action URL if available, else original URL
             // Force POST for body params even if the original target method was GET
             let method = reqwest::Method::POST;
-            let parsed_url = param.form_action_url
+            let parsed_url = param
+                .form_action_url
                 .as_ref()
                 .and_then(|u| url::Url::parse(u).ok())
                 .unwrap_or_else(|| target.url.clone());
@@ -586,7 +594,8 @@ async fn fetch_injection_response_with_client(
             // JSON body injection: use form action URL if available, else original URL
             // Force POST for JSON body params
             let method = reqwest::Method::POST;
-            let parsed_url = param.form_action_url
+            let parsed_url = param
+                .form_action_url
                 .as_ref()
                 .and_then(|u| url::Url::parse(u).ok())
                 .unwrap_or_else(|| target.url.clone());
@@ -612,7 +621,8 @@ async fn fetch_injection_response_with_client(
         }
         Location::MultipartBody => {
             let method = reqwest::Method::POST;
-            let parsed_url = param.form_action_url
+            let parsed_url = param
+                .form_action_url
                 .as_ref()
                 .and_then(|u| url::Url::parse(u).ok())
                 .unwrap_or_else(|| target.url.clone());
@@ -620,8 +630,12 @@ async fn fetch_injection_response_with_client(
             if let Some(ref data) = target.data {
                 for pair in data.split('&') {
                     if let Some((k, v)) = pair.split_once('=') {
-                        let k = urlencoding::decode(k).unwrap_or(std::borrow::Cow::Borrowed(k)).to_string();
-                        let v = urlencoding::decode(v).unwrap_or(std::borrow::Cow::Borrowed(v)).to_string();
+                        let k = urlencoding::decode(k)
+                            .unwrap_or(std::borrow::Cow::Borrowed(k))
+                            .to_string();
+                        let v = urlencoding::decode(v)
+                            .unwrap_or(std::borrow::Cow::Borrowed(v))
+                            .to_string();
                         if k == param.name {
                             form = form.text(k, encoded_payload.to_string());
                         } else {
@@ -632,13 +646,15 @@ async fn fetch_injection_response_with_client(
             } else {
                 form = form.text(param.name.clone(), encoded_payload.to_string());
             }
-            crate::utils::build_request(client, target, method, parsed_url, None)
-                .multipart(form)
+            crate::utils::build_request(client, target, method, parsed_url, None).multipart(form)
         }
         _ => {
             // Query / Path: inject encoded payload into the URL
-            let inject_url =
-                crate::scanning::url_inject::build_injected_url(&target.url, param, &encoded_payload);
+            let inject_url = crate::scanning::url_inject::build_injected_url(
+                &target.url,
+                param,
+                &encoded_payload,
+            );
             let parsed_url = url::Url::parse(&inject_url).unwrap_or_else(|_| target.url.clone());
             crate::utils::build_request(
                 client,
@@ -691,7 +707,8 @@ async fn fetch_injection_response_with_client(
             // consecutive counter is per-scan when bound (MCP / REST runners)
             // so one scan's WAF blocks don't slow down unrelated concurrent
             // scans; CLI falls back to the process-wide counter.
-            if status_code == 403 || status_code == 406 || status_code == 429 || status_code == 503 {
+            if status_code == 403 || status_code == 406 || status_code == 429 || status_code == 503
+            {
                 let consecutive = crate::tick_waf_block();
                 // Apply adaptive backoff when consecutive blocks exceed threshold
                 if consecutive >= 3 {
@@ -706,9 +723,7 @@ async fn fetch_injection_response_with_client(
             }
 
             // Skip processing if the status code is in the ignore_return list
-            if !args.ignore_return.is_empty()
-                && args.ignore_return.contains(&status_code)
-            {
+            if !args.ignore_return.is_empty() && args.ignore_return.contains(&status_code) {
                 return None;
             }
             // Suppress path-segment "reflections" on non-2xx responses: error
@@ -866,9 +881,7 @@ pub async fn check_reflection_with_hpp_url(
 
     if let Ok(resp) = inject_resp {
         // Skip processing if the status code is in the ignore_return list
-        if !args.ignore_return.is_empty()
-            && args.ignore_return.contains(&resp.status().as_u16())
-        {
+        if !args.ignore_return.is_empty() && args.ignore_return.contains(&resp.status().as_u16()) {
             return (None, None);
         }
         if resp.status().is_redirection()
@@ -923,9 +936,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         }
     }
 
@@ -1031,9 +1044,7 @@ mod tests {
     /// Mirrors brutelogic c1: reflects the param into a JS string literal
     /// after HTML-encoding `'` and `<`. Browser does not decode entities
     /// inside `<script>` so the reflection is inert.
-    async fn js_string_apos_handler(
-        Query(params): Query<HashMap<String, String>>,
-    ) -> Html<String> {
+    async fn js_string_apos_handler(Query(params): Query<HashMap<String, String>>) -> Html<String> {
         let q = params.get("q").cloned().unwrap_or_default();
         Html(format!(
             "<html><body><script>var c1 = '{}';</script></body></html>",
@@ -1311,8 +1322,7 @@ mod tests {
         let param = make_param();
         let args = default_scan_args();
 
-        let (kind, body) =
-            check_reflection_with_response(&target, &param, payload, &args).await;
+        let (kind, body) = check_reflection_with_response(&target, &param, payload, &args).await;
         assert_eq!(
             kind, None,
             "apos-encoded JS-string reflection should be classified inert (no R)"
@@ -1516,7 +1526,10 @@ mod tests {
     #[test]
     fn test_safe_context_title_breakout() {
         let payload = "</title><IMG src=x onerror=alert(1) ClAss=dlxtest>";
-        let html = format!("<html><head><title>{}</title></head><body></body></html>", payload);
+        let html = format!(
+            "<html><head><title>{}</title></head><body></body></html>",
+            payload
+        );
         // Breakout payload closes the title tag, so the IMG is outside the safe context
         assert!(
             !is_in_safe_context(&html, payload),
@@ -1593,8 +1606,7 @@ mod tests {
         // `<` to `&lt;` and reflects inside a JS string. Browser does not
         // decode entities inside <script>, so the payload is just text.
         let payload = "<img src=x onerror=alert(1) class=dlxtest>";
-        let html =
-            "<script>var c6 = \"&lt;img src=x onerror=alert(1) class=dlxtest>\";</script>";
+        let html = "<script>var c6 = \"&lt;img src=x onerror=alert(1) class=dlxtest>\";</script>";
         assert!(
             is_payload_inert_in_scripts(html, payload),
             "entity-encoded HTML payload reflected only inside JS string should be inert"
@@ -1626,7 +1638,10 @@ mod tests {
         // the URL-encoded payload string verbatim.
         let payload = "%27-alert%281%29-%27"; // URL-encoded `'-alert(1)-'`
         let html = "<script>var c1 = '&apos;-alert(1)-&apos;';</script>";
-        assert!(!html.contains(payload), "URL-encoded form should not appear");
+        assert!(
+            !html.contains(payload),
+            "URL-encoded form should not appear"
+        );
         assert!(
             is_payload_inert_in_scripts(html, payload),
             "URL-encoded JS-context payload reflected as decoded text inside JS string should be inert"

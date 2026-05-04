@@ -61,17 +61,29 @@ pub fn apply_pre_encoding(payload: &str, pre_encoding: &Option<String>) -> Strin
     }
 }
 
+/// A single pre-encoding probe: the encoding type and a function that
+/// applies it to a raw payload.
+pub type EncodingProbe = (PreEncodingType, fn(&str) -> String);
+
 /// Encoding probes used during discovery to detect parameters that require
 /// pre-encoding. Each probe has a type and its corresponding encode function.
 ///
 /// Returns all known pre-encoding types in probe order (base64 variants first,
 /// then URL variants).
-pub fn encoding_probes() -> &'static [(PreEncodingType, fn(&str) -> String)] {
+pub fn encoding_probes() -> &'static [EncodingProbe] {
     &[
-        (PreEncodingType::Base64, |s: &str| PreEncodingType::Base64.encode(s)),
-        (PreEncodingType::DoubleBase64, |s: &str| PreEncodingType::DoubleBase64.encode(s)),
-        (PreEncodingType::DoubleUrl, |s: &str| PreEncodingType::DoubleUrl.encode(s)),
-        (PreEncodingType::TripleUrl, |s: &str| PreEncodingType::TripleUrl.encode(s)),
+        (PreEncodingType::Base64, |s: &str| {
+            PreEncodingType::Base64.encode(s)
+        }),
+        (PreEncodingType::DoubleBase64, |s: &str| {
+            PreEncodingType::DoubleBase64.encode(s)
+        }),
+        (PreEncodingType::DoubleUrl, |s: &str| {
+            PreEncodingType::DoubleUrl.encode(s)
+        }),
+        (PreEncodingType::TripleUrl, |s: &str| {
+            PreEncodingType::TripleUrl.encode(s)
+        }),
     ]
 }
 
@@ -96,7 +108,10 @@ mod tests {
     #[test]
     fn test_apply_pre_encoding_none() {
         assert_eq!(apply_pre_encoding("test", &None), "test");
-        assert_eq!(apply_pre_encoding("test", &Some("unknown".to_string())), "test");
+        assert_eq!(
+            apply_pre_encoding("test", &Some("unknown".to_string())),
+            "test"
+        );
     }
 
     #[test]
@@ -119,19 +134,13 @@ mod tests {
     #[test]
     fn test_apply_pre_encoding_2url() {
         let expected = url_encode(&url_encode("<"));
-        assert_eq!(
-            apply_pre_encoding("<", &Some("2url".to_string())),
-            expected
-        );
+        assert_eq!(apply_pre_encoding("<", &Some("2url".to_string())), expected);
     }
 
     #[test]
     fn test_apply_pre_encoding_3url() {
         let expected = url_encode(&url_encode(&url_encode("<")));
-        assert_eq!(
-            apply_pre_encoding("<", &Some("3url".to_string())),
-            expected
-        );
+        assert_eq!(apply_pre_encoding("<", &Some("3url".to_string())), expected);
     }
 
     #[test]

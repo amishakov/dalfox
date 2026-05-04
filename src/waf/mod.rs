@@ -78,9 +78,11 @@ impl WafDetectionResult {
 
     /// Return the highest-confidence WAF detected, if any.
     pub fn primary(&self) -> Option<&WafFingerprint> {
-        self.detected
-            .iter()
-            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal))
+        self.detected.iter().max_by(|a, b| {
+            a.confidence
+                .partial_cmp(&b.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     /// Return all detected WAF types.
@@ -123,46 +125,220 @@ pub fn fingerprint_from_response(
     // ── Header-based detection ──────────────────────────────────────
     let header_rules: Vec<HeaderRule> = vec![
         // Cloudflare
-        HeaderRule { header: "cf-ray", value_contains: None, waf_type: WafType::Cloudflare, confidence: 0.9, evidence_label: "cf-ray header" },
-        HeaderRule { header: "cf-cache-status", value_contains: None, waf_type: WafType::Cloudflare, confidence: 0.7, evidence_label: "cf-cache-status header" },
-        HeaderRule { header: "server", value_contains: Some("cloudflare"), waf_type: WafType::Cloudflare, confidence: 0.95, evidence_label: "Server: cloudflare" },
+        HeaderRule {
+            header: "cf-ray",
+            value_contains: None,
+            waf_type: WafType::Cloudflare,
+            confidence: 0.9,
+            evidence_label: "cf-ray header",
+        },
+        HeaderRule {
+            header: "cf-cache-status",
+            value_contains: None,
+            waf_type: WafType::Cloudflare,
+            confidence: 0.7,
+            evidence_label: "cf-cache-status header",
+        },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("cloudflare"),
+            waf_type: WafType::Cloudflare,
+            confidence: 0.95,
+            evidence_label: "Server: cloudflare",
+        },
         // AWS WAF / CloudFront
-        HeaderRule { header: "x-amzn-requestid", value_contains: None, waf_type: WafType::AwsWaf, confidence: 0.6, evidence_label: "x-amzn-requestid header" },
-        HeaderRule { header: "x-amz-cf-id", value_contains: None, waf_type: WafType::AwsWaf, confidence: 0.7, evidence_label: "x-amz-cf-id header (CloudFront)" },
-        HeaderRule { header: "x-amzn-waf-action", value_contains: None, waf_type: WafType::AwsWaf, confidence: 0.95, evidence_label: "x-amzn-waf-action header" },
+        HeaderRule {
+            header: "x-amzn-requestid",
+            value_contains: None,
+            waf_type: WafType::AwsWaf,
+            confidence: 0.6,
+            evidence_label: "x-amzn-requestid header",
+        },
+        HeaderRule {
+            header: "x-amz-cf-id",
+            value_contains: None,
+            waf_type: WafType::AwsWaf,
+            confidence: 0.7,
+            evidence_label: "x-amz-cf-id header (CloudFront)",
+        },
+        HeaderRule {
+            header: "x-amzn-waf-action",
+            value_contains: None,
+            waf_type: WafType::AwsWaf,
+            confidence: 0.95,
+            evidence_label: "x-amzn-waf-action header",
+        },
         // Akamai
-        HeaderRule { header: "x-akamai-transformed", value_contains: None, waf_type: WafType::Akamai, confidence: 0.85, evidence_label: "x-akamai-transformed header" },
-        HeaderRule { header: "server", value_contains: Some("akamaighost"), waf_type: WafType::Akamai, confidence: 0.9, evidence_label: "Server: AkamaiGHost" },
-        HeaderRule { header: "x-akamai-session-info", value_contains: None, waf_type: WafType::Akamai, confidence: 0.8, evidence_label: "x-akamai-session-info header" },
+        HeaderRule {
+            header: "x-akamai-transformed",
+            value_contains: None,
+            waf_type: WafType::Akamai,
+            confidence: 0.85,
+            evidence_label: "x-akamai-transformed header",
+        },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("akamaighost"),
+            waf_type: WafType::Akamai,
+            confidence: 0.9,
+            evidence_label: "Server: AkamaiGHost",
+        },
+        HeaderRule {
+            header: "x-akamai-session-info",
+            value_contains: None,
+            waf_type: WafType::Akamai,
+            confidence: 0.8,
+            evidence_label: "x-akamai-session-info header",
+        },
         // Imperva / Incapsula
-        HeaderRule { header: "x-cdn", value_contains: Some("imperva"), waf_type: WafType::Imperva, confidence: 0.9, evidence_label: "X-CDN: Imperva" },
-        HeaderRule { header: "x-iinfo", value_contains: None, waf_type: WafType::Imperva, confidence: 0.8, evidence_label: "x-iinfo header" },
-        HeaderRule { header: "x-cdn-forward", value_contains: None, waf_type: WafType::Imperva, confidence: 0.6, evidence_label: "x-cdn-forward header" },
+        HeaderRule {
+            header: "x-cdn",
+            value_contains: Some("imperva"),
+            waf_type: WafType::Imperva,
+            confidence: 0.9,
+            evidence_label: "X-CDN: Imperva",
+        },
+        HeaderRule {
+            header: "x-iinfo",
+            value_contains: None,
+            waf_type: WafType::Imperva,
+            confidence: 0.8,
+            evidence_label: "x-iinfo header",
+        },
+        HeaderRule {
+            header: "x-cdn-forward",
+            value_contains: None,
+            waf_type: WafType::Imperva,
+            confidence: 0.6,
+            evidence_label: "x-cdn-forward header",
+        },
         // ModSecurity
-        HeaderRule { header: "server", value_contains: Some("mod_security"), waf_type: WafType::ModSecurity, confidence: 0.95, evidence_label: "Server: mod_security" },
-        HeaderRule { header: "server", value_contains: Some("modsecurity"), waf_type: WafType::ModSecurity, confidence: 0.95, evidence_label: "Server: ModSecurity" },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("mod_security"),
+            waf_type: WafType::ModSecurity,
+            confidence: 0.95,
+            evidence_label: "Server: mod_security",
+        },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("modsecurity"),
+            waf_type: WafType::ModSecurity,
+            confidence: 0.95,
+            evidence_label: "Server: ModSecurity",
+        },
         // Sucuri
-        HeaderRule { header: "x-sucuri-id", value_contains: None, waf_type: WafType::Sucuri, confidence: 0.95, evidence_label: "x-sucuri-id header" },
-        HeaderRule { header: "x-sucuri-cache", value_contains: None, waf_type: WafType::Sucuri, confidence: 0.8, evidence_label: "x-sucuri-cache header" },
-        HeaderRule { header: "server", value_contains: Some("sucuri"), waf_type: WafType::Sucuri, confidence: 0.9, evidence_label: "Server: Sucuri" },
+        HeaderRule {
+            header: "x-sucuri-id",
+            value_contains: None,
+            waf_type: WafType::Sucuri,
+            confidence: 0.95,
+            evidence_label: "x-sucuri-id header",
+        },
+        HeaderRule {
+            header: "x-sucuri-cache",
+            value_contains: None,
+            waf_type: WafType::Sucuri,
+            confidence: 0.8,
+            evidence_label: "x-sucuri-cache header",
+        },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("sucuri"),
+            waf_type: WafType::Sucuri,
+            confidence: 0.9,
+            evidence_label: "Server: Sucuri",
+        },
         // F5 BIG-IP
-        HeaderRule { header: "server", value_contains: Some("bigip"), waf_type: WafType::F5BigIp, confidence: 0.9, evidence_label: "Server: BigIP" },
-        HeaderRule { header: "x-wa-info", value_contains: None, waf_type: WafType::F5BigIp, confidence: 0.7, evidence_label: "x-wa-info header" },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("bigip"),
+            waf_type: WafType::F5BigIp,
+            confidence: 0.9,
+            evidence_label: "Server: BigIP",
+        },
+        HeaderRule {
+            header: "x-wa-info",
+            value_contains: None,
+            waf_type: WafType::F5BigIp,
+            confidence: 0.7,
+            evidence_label: "x-wa-info header",
+        },
         // Barracuda
-        HeaderRule { header: "server", value_contains: Some("barracuda"), waf_type: WafType::Barracuda, confidence: 0.9, evidence_label: "Server: Barracuda" },
-        HeaderRule { header: "barra_counter_session", value_contains: None, waf_type: WafType::Barracuda, confidence: 0.85, evidence_label: "barra_counter_session cookie header" },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("barracuda"),
+            waf_type: WafType::Barracuda,
+            confidence: 0.9,
+            evidence_label: "Server: Barracuda",
+        },
+        HeaderRule {
+            header: "barra_counter_session",
+            value_contains: None,
+            waf_type: WafType::Barracuda,
+            confidence: 0.85,
+            evidence_label: "barra_counter_session cookie header",
+        },
         // FortiWeb
-        HeaderRule { header: "x-fw-server", value_contains: None, waf_type: WafType::FortiWeb, confidence: 0.85, evidence_label: "x-fw-server header" },
-        HeaderRule { header: "server", value_contains: Some("fortiweb"), waf_type: WafType::FortiWeb, confidence: 0.9, evidence_label: "Server: FortiWeb" },
+        HeaderRule {
+            header: "x-fw-server",
+            value_contains: None,
+            waf_type: WafType::FortiWeb,
+            confidence: 0.85,
+            evidence_label: "x-fw-server header",
+        },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("fortiweb"),
+            waf_type: WafType::FortiWeb,
+            confidence: 0.9,
+            evidence_label: "Server: FortiWeb",
+        },
         // Azure WAF
-        HeaderRule { header: "x-azure-ref", value_contains: None, waf_type: WafType::AzureWaf, confidence: 0.7, evidence_label: "x-azure-ref header" },
-        HeaderRule { header: "x-ms-forbidden-ip", value_contains: None, waf_type: WafType::AzureWaf, confidence: 0.85, evidence_label: "x-ms-forbidden-ip header" },
+        HeaderRule {
+            header: "x-azure-ref",
+            value_contains: None,
+            waf_type: WafType::AzureWaf,
+            confidence: 0.7,
+            evidence_label: "x-azure-ref header",
+        },
+        HeaderRule {
+            header: "x-ms-forbidden-ip",
+            value_contains: None,
+            waf_type: WafType::AzureWaf,
+            confidence: 0.85,
+            evidence_label: "x-ms-forbidden-ip header",
+        },
         // Google Cloud Armor
-        HeaderRule { header: "server", value_contains: Some("google frontend"), waf_type: WafType::CloudArmor, confidence: 0.5, evidence_label: "Server: Google Frontend" },
-        HeaderRule { header: "x-goog-request-info", value_contains: None, waf_type: WafType::CloudArmor, confidence: 0.6, evidence_label: "x-goog-request-info header" },
+        HeaderRule {
+            header: "server",
+            value_contains: Some("google frontend"),
+            waf_type: WafType::CloudArmor,
+            confidence: 0.5,
+            evidence_label: "Server: Google Frontend",
+        },
+        HeaderRule {
+            header: "x-goog-request-info",
+            value_contains: None,
+            waf_type: WafType::CloudArmor,
+            confidence: 0.6,
+            evidence_label: "x-goog-request-info header",
+        },
         // Fastly
-        HeaderRule { header: "x-fastly-request-id", value_contains: None, waf_type: WafType::Fastly, confidence: 0.8, evidence_label: "x-fastly-request-id header" },
-        HeaderRule { header: "via", value_contains: Some("varnish"), waf_type: WafType::Fastly, confidence: 0.5, evidence_label: "Via: varnish (possibly Fastly)" },
+        HeaderRule {
+            header: "x-fastly-request-id",
+            value_contains: None,
+            waf_type: WafType::Fastly,
+            confidence: 0.8,
+            evidence_label: "x-fastly-request-id header",
+        },
+        HeaderRule {
+            header: "via",
+            value_contains: Some("varnish"),
+            waf_type: WafType::Fastly,
+            confidence: 0.5,
+            evidence_label: "Via: varnish (possibly Fastly)",
+        },
     ];
 
     for rule in &header_rules {
@@ -176,11 +352,14 @@ pub fn fingerprint_from_response(
                     .unwrap_or(false),
             };
             if matched {
-                merge_fingerprint(&mut result, WafFingerprint {
-                    waf_type: rule.waf_type.clone(),
-                    confidence: rule.confidence,
-                    evidence: rule.evidence_label.to_string(),
-                });
+                merge_fingerprint(
+                    &mut result,
+                    WafFingerprint {
+                        waf_type: rule.waf_type.clone(),
+                        confidence: rule.confidence,
+                        evidence: rule.evidence_label.to_string(),
+                    },
+                );
             }
         }
     }
@@ -191,53 +370,191 @@ pub fn fingerprint_from_response(
 
         let body_rules: Vec<BodyRule> = vec![
             // Cloudflare
-            BodyRule { pattern: "attention required! | cloudflare", waf_type: WafType::Cloudflare, confidence: 0.9, evidence_label: "Cloudflare block page" },
-            BodyRule { pattern: "cloudflare ray id", waf_type: WafType::Cloudflare, confidence: 0.85, evidence_label: "Cloudflare Ray ID in body" },
+            BodyRule {
+                pattern: "attention required! | cloudflare",
+                waf_type: WafType::Cloudflare,
+                confidence: 0.9,
+                evidence_label: "Cloudflare block page",
+            },
+            BodyRule {
+                pattern: "cloudflare ray id",
+                waf_type: WafType::Cloudflare,
+                confidence: 0.85,
+                evidence_label: "Cloudflare Ray ID in body",
+            },
             // Imperva
-            BodyRule { pattern: "incapsula incident id", waf_type: WafType::Imperva, confidence: 0.95, evidence_label: "Incapsula incident ID in body" },
-            BodyRule { pattern: "powered by incapsula", waf_type: WafType::Imperva, confidence: 0.9, evidence_label: "Powered by Incapsula" },
+            BodyRule {
+                pattern: "incapsula incident id",
+                waf_type: WafType::Imperva,
+                confidence: 0.95,
+                evidence_label: "Incapsula incident ID in body",
+            },
+            BodyRule {
+                pattern: "powered by incapsula",
+                waf_type: WafType::Imperva,
+                confidence: 0.9,
+                evidence_label: "Powered by Incapsula",
+            },
             // ModSecurity
-            BodyRule { pattern: "modsecurity", waf_type: WafType::ModSecurity, confidence: 0.85, evidence_label: "ModSecurity in body" },
-            BodyRule { pattern: "mod_security", waf_type: WafType::ModSecurity, confidence: 0.85, evidence_label: "mod_security in body" },
-            BodyRule { pattern: "not acceptable!", waf_type: WafType::ModSecurity, confidence: 0.4, evidence_label: "Not Acceptable error (possible ModSecurity)" },
+            BodyRule {
+                pattern: "modsecurity",
+                waf_type: WafType::ModSecurity,
+                confidence: 0.85,
+                evidence_label: "ModSecurity in body",
+            },
+            BodyRule {
+                pattern: "mod_security",
+                waf_type: WafType::ModSecurity,
+                confidence: 0.85,
+                evidence_label: "mod_security in body",
+            },
+            BodyRule {
+                pattern: "not acceptable!",
+                waf_type: WafType::ModSecurity,
+                confidence: 0.4,
+                evidence_label: "Not Acceptable error (possible ModSecurity)",
+            },
             // OWASP CRS (often runs on ModSecurity but has distinctive patterns)
-            BodyRule { pattern: "owasp_crs", waf_type: WafType::OwaspCrs, confidence: 0.95, evidence_label: "OWASP CRS rule ID in body" },
-            BodyRule { pattern: "owasp crs", waf_type: WafType::OwaspCrs, confidence: 0.9, evidence_label: "OWASP CRS mention in body" },
-            BodyRule { pattern: "coreruleset", waf_type: WafType::OwaspCrs, confidence: 0.9, evidence_label: "CoreRuleSet reference in body" },
-            BodyRule { pattern: "core rule set", waf_type: WafType::OwaspCrs, confidence: 0.85, evidence_label: "Core Rule Set reference in body" },
-            BodyRule { pattern: "id \"941", waf_type: WafType::OwaspCrs, confidence: 0.95, evidence_label: "CRS XSS rule ID 941xxx in body" },
-            BodyRule { pattern: "id \"942", waf_type: WafType::OwaspCrs, confidence: 0.9, evidence_label: "CRS SQLi rule ID 942xxx in body" },
-            BodyRule { pattern: "id \"949", waf_type: WafType::OwaspCrs, confidence: 0.9, evidence_label: "CRS blocking rule ID 949xxx in body" },
-            BodyRule { pattern: "id \"980", waf_type: WafType::OwaspCrs, confidence: 0.85, evidence_label: "CRS correlation rule ID 980xxx in body" },
+            BodyRule {
+                pattern: "owasp_crs",
+                waf_type: WafType::OwaspCrs,
+                confidence: 0.95,
+                evidence_label: "OWASP CRS rule ID in body",
+            },
+            BodyRule {
+                pattern: "owasp crs",
+                waf_type: WafType::OwaspCrs,
+                confidence: 0.9,
+                evidence_label: "OWASP CRS mention in body",
+            },
+            BodyRule {
+                pattern: "coreruleset",
+                waf_type: WafType::OwaspCrs,
+                confidence: 0.9,
+                evidence_label: "CoreRuleSet reference in body",
+            },
+            BodyRule {
+                pattern: "core rule set",
+                waf_type: WafType::OwaspCrs,
+                confidence: 0.85,
+                evidence_label: "Core Rule Set reference in body",
+            },
+            BodyRule {
+                pattern: "id \"941",
+                waf_type: WafType::OwaspCrs,
+                confidence: 0.95,
+                evidence_label: "CRS XSS rule ID 941xxx in body",
+            },
+            BodyRule {
+                pattern: "id \"942",
+                waf_type: WafType::OwaspCrs,
+                confidence: 0.9,
+                evidence_label: "CRS SQLi rule ID 942xxx in body",
+            },
+            BodyRule {
+                pattern: "id \"949",
+                waf_type: WafType::OwaspCrs,
+                confidence: 0.9,
+                evidence_label: "CRS blocking rule ID 949xxx in body",
+            },
+            BodyRule {
+                pattern: "id \"980",
+                waf_type: WafType::OwaspCrs,
+                confidence: 0.85,
+                evidence_label: "CRS correlation rule ID 980xxx in body",
+            },
             // Sucuri
-            BodyRule { pattern: "access denied - sucuri website firewall", waf_type: WafType::Sucuri, confidence: 0.95, evidence_label: "Sucuri block page" },
-            BodyRule { pattern: "sucuri cloudproxy", waf_type: WafType::Sucuri, confidence: 0.9, evidence_label: "Sucuri CloudProxy in body" },
+            BodyRule {
+                pattern: "access denied - sucuri website firewall",
+                waf_type: WafType::Sucuri,
+                confidence: 0.95,
+                evidence_label: "Sucuri block page",
+            },
+            BodyRule {
+                pattern: "sucuri cloudproxy",
+                waf_type: WafType::Sucuri,
+                confidence: 0.9,
+                evidence_label: "Sucuri CloudProxy in body",
+            },
             // Wordfence
-            BodyRule { pattern: "generated by wordfence", waf_type: WafType::Wordfence, confidence: 0.95, evidence_label: "Wordfence block page" },
-            BodyRule { pattern: "wordfence", waf_type: WafType::Wordfence, confidence: 0.6, evidence_label: "Wordfence mention in body" },
+            BodyRule {
+                pattern: "generated by wordfence",
+                waf_type: WafType::Wordfence,
+                confidence: 0.95,
+                evidence_label: "Wordfence block page",
+            },
+            BodyRule {
+                pattern: "wordfence",
+                waf_type: WafType::Wordfence,
+                confidence: 0.6,
+                evidence_label: "Wordfence mention in body",
+            },
             // AWS WAF
-            BodyRule { pattern: "request blocked", waf_type: WafType::AwsWaf, confidence: 0.3, evidence_label: "Request blocked (possible AWS WAF)" },
+            BodyRule {
+                pattern: "request blocked",
+                waf_type: WafType::AwsWaf,
+                confidence: 0.3,
+                evidence_label: "Request blocked (possible AWS WAF)",
+            },
             // F5 BIG-IP ASM
-            BodyRule { pattern: "the requested url was rejected", waf_type: WafType::F5BigIp, confidence: 0.7, evidence_label: "F5 ASM block page" },
-            BodyRule { pattern: "support id:", waf_type: WafType::F5BigIp, confidence: 0.5, evidence_label: "F5 support ID in body" },
+            BodyRule {
+                pattern: "the requested url was rejected",
+                waf_type: WafType::F5BigIp,
+                confidence: 0.7,
+                evidence_label: "F5 ASM block page",
+            },
+            BodyRule {
+                pattern: "support id:",
+                waf_type: WafType::F5BigIp,
+                confidence: 0.5,
+                evidence_label: "F5 support ID in body",
+            },
             // Barracuda
-            BodyRule { pattern: "barracuda web application firewall", waf_type: WafType::Barracuda, confidence: 0.95, evidence_label: "Barracuda WAF block page" },
+            BodyRule {
+                pattern: "barracuda web application firewall",
+                waf_type: WafType::Barracuda,
+                confidence: 0.95,
+                evidence_label: "Barracuda WAF block page",
+            },
             // FortiWeb
-            BodyRule { pattern: "fortiweb", waf_type: WafType::FortiWeb, confidence: 0.7, evidence_label: "FortiWeb in body" },
-            BodyRule { pattern: "fortigate", waf_type: WafType::FortiWeb, confidence: 0.5, evidence_label: "FortiGate in body" },
+            BodyRule {
+                pattern: "fortiweb",
+                waf_type: WafType::FortiWeb,
+                confidence: 0.7,
+                evidence_label: "FortiWeb in body",
+            },
+            BodyRule {
+                pattern: "fortigate",
+                waf_type: WafType::FortiWeb,
+                confidence: 0.5,
+                evidence_label: "FortiGate in body",
+            },
             // Azure WAF
-            BodyRule { pattern: "azure front door", waf_type: WafType::AzureWaf, confidence: 0.6, evidence_label: "Azure Front Door in body" },
+            BodyRule {
+                pattern: "azure front door",
+                waf_type: WafType::AzureWaf,
+                confidence: 0.6,
+                evidence_label: "Azure Front Door in body",
+            },
             // Google Cloud Armor
-            BodyRule { pattern: "google cloud armor", waf_type: WafType::CloudArmor, confidence: 0.9, evidence_label: "Google Cloud Armor in body" },
+            BodyRule {
+                pattern: "google cloud armor",
+                waf_type: WafType::CloudArmor,
+                confidence: 0.9,
+                evidence_label: "Google Cloud Armor in body",
+            },
         ];
 
         for rule in &body_rules {
             if body_lower.contains(rule.pattern) {
-                merge_fingerprint(&mut result, WafFingerprint {
-                    waf_type: rule.waf_type.clone(),
-                    confidence: rule.confidence,
-                    evidence: rule.evidence_label.to_string(),
-                });
+                merge_fingerprint(
+                    &mut result,
+                    WafFingerprint {
+                        waf_type: rule.waf_type.clone(),
+                        confidence: rule.confidence,
+                        evidence: rule.evidence_label.to_string(),
+                    },
+                );
             }
         }
 
@@ -251,7 +568,11 @@ pub fn fingerprint_from_response(
     }
 
     // Sort by confidence descending
-    result.detected.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    result.detected.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     result
 }
 
@@ -297,7 +618,11 @@ pub async fn fingerprint_with_probe(
 
 /// Merge a new fingerprint into the result, taking the max confidence per WAF type.
 fn merge_fingerprint(result: &mut WafDetectionResult, fp: WafFingerprint) {
-    if let Some(existing) = result.detected.iter_mut().find(|e| e.waf_type == fp.waf_type) {
+    if let Some(existing) = result
+        .detected
+        .iter_mut()
+        .find(|e| e.waf_type == fp.waf_type)
+    {
         if fp.confidence > existing.confidence {
             existing.confidence = fp.confidence;
             existing.evidence = fp.evidence;
@@ -312,7 +637,11 @@ pub fn merge_results(a: &mut WafDetectionResult, b: WafDetectionResult) {
     for fp in b.detected {
         merge_fingerprint(a, fp);
     }
-    a.detected.sort_by(|x, y| y.confidence.partial_cmp(&x.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    a.detected.sort_by(|x, y| {
+        y.confidence
+            .partial_cmp(&x.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 }
 
 #[cfg(test)]
@@ -433,13 +762,17 @@ mod tests {
         assert_eq!(format!("{}", WafType::Cloudflare), "Cloudflare");
         assert_eq!(format!("{}", WafType::Imperva), "Imperva/Incapsula");
         assert_eq!(format!("{}", WafType::OwaspCrs), "OWASP CRS");
-        assert_eq!(format!("{}", WafType::Unknown("test".to_string())), "Unknown (test)");
+        assert_eq!(
+            format!("{}", WafType::Unknown("test".to_string())),
+            "Unknown (test)"
+        );
     }
 
     #[test]
     fn test_owasp_crs_detection_by_rule_id() {
         let headers = make_headers(&[]);
-        let body = r#"<html><body>ModSecurity: Access denied with code 403. id "941110"</body></html>"#;
+        let body =
+            r#"<html><body>ModSecurity: Access denied with code 403. id "941110"</body></html>"#;
         let result = fingerprint_from_response(&headers, Some(body), 403);
         assert!(result.waf_types().contains(&&WafType::OwaspCrs));
     }

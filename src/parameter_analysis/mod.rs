@@ -205,10 +205,8 @@ pub async fn active_probe_param(
             );
             // Apply pre-encoding (base64/2base64) so the server can decode
             // the probe value the same way it decodes normal user input.
-            let payload = crate::encoding::pre_encoding::apply_pre_encoding(
-                &probe_payload,
-                &pre_encoding,
-            );
+            let payload =
+                crate::encoding::pre_encoding::apply_pre_encoding(&probe_payload, &pre_encoding);
             // Force POST for Body/JsonBody/MultipartBody params even when default target method is GET
             let req_method = match location {
                 Location::Body | Location::JsonBody | Location::MultipartBody => {
@@ -279,9 +277,15 @@ pub async fn active_probe_param(
                         let mut cookie_header = String::new();
                         for (k, v) in &cookies {
                             if k == &param_name {
-                                cookie_header.push_str(k); cookie_header.push('='); cookie_header.push_str(&payload); cookie_header.push_str("; ");
+                                cookie_header.push_str(k);
+                                cookie_header.push('=');
+                                cookie_header.push_str(&payload);
+                                cookie_header.push_str("; ");
                             } else {
-                                cookie_header.push_str(k); cookie_header.push('='); cookie_header.push_str(v); cookie_header.push_str("; ");
+                                cookie_header.push_str(k);
+                                cookie_header.push('=');
+                                cookie_header.push_str(v);
+                                cookie_header.push_str("; ");
                             }
                         }
                         if !cookie_header.is_empty() {
@@ -396,7 +400,8 @@ pub async fn active_probe_param(
                     // Fragment injection: payload goes into the URL fragment.
                     // Use build_injected_url which handles fragment param replacement.
                     let inject_url_str = crate::scanning::url_inject::build_injected_url(
-                        &url_original, &crate::parameter_analysis::Param {
+                        &url_original,
+                        &crate::parameter_analysis::Param {
                             name: param_name.clone(),
                             value: String::new(),
                             location: Location::Fragment,
@@ -406,8 +411,11 @@ pub async fn active_probe_param(
                             pre_encoding: None,
                             form_action_url: None,
                             form_origin_url: None,
-                        }, &payload);
-                    let frag_url = url::Url::parse(&inject_url_str).unwrap_or_else(|_| url_original.clone());
+                        },
+                        &payload,
+                    );
+                    let frag_url =
+                        url::Url::parse(&inject_url_str).unwrap_or_else(|_| url_original.clone());
                     request_builder = client_clone.request(req_method, frag_url);
                 }
             }
@@ -425,7 +433,10 @@ pub async fn active_probe_param(
                     if ck == &param_name && location == Location::Header {
                         continue;
                     }
-                    cookie_header.push_str(ck); cookie_header.push('='); cookie_header.push_str(cv); cookie_header.push_str("; ");
+                    cookie_header.push_str(ck);
+                    cookie_header.push('=');
+                    cookie_header.push_str(cv);
+                    cookie_header.push_str("; ");
                 }
                 if !cookie_header.is_empty() {
                     cookie_header.pop();
@@ -434,7 +445,10 @@ pub async fn active_probe_param(
                 }
             }
             if let Some(d) = &data
-                && matches!(location, Location::Query | Location::Header | Location::Fragment)
+                && matches!(
+                    location,
+                    Location::Query | Location::Header | Location::Fragment
+                )
             {
                 request_builder = request_builder.body(d.clone());
             }
@@ -444,9 +458,7 @@ pub async fn active_probe_param(
                 request_builder.send().await
             } {
                 // Skip processing if the status code is in the ignore_return list
-                if !ignore_return.is_empty()
-                    && ignore_return.contains(&resp.status().as_u16())
-                {
+                if !ignore_return.is_empty() && ignore_return.contains(&resp.status().as_u16()) {
                     false
                 } else {
                     // For redirect responses, also check the Location header
@@ -462,10 +474,7 @@ pub async fn active_probe_param(
                         Ok(body) => Some(body),
                         Err(e) => {
                             if crate::DEBUG.load(std::sync::atomic::Ordering::Relaxed) {
-                                eprintln!(
-                                    "[DBG] discovery response body read failed: {}",
-                                    e
-                                );
+                                eprintln!("[DBG] discovery response body read failed: {}", e);
                             }
                             None
                         }
@@ -783,9 +792,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         });
     }
 
@@ -1031,9 +1040,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         });
 
         assert!(!target.reflection_params.is_empty());
@@ -1055,9 +1064,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         });
 
         assert!(!target.reflection_params.is_empty());
@@ -1079,9 +1088,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         });
 
         assert!(!target.reflection_params.is_empty());
@@ -1320,9 +1329,9 @@ mod tests {
                 injection_context: Some(InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             },
             Param {
                 name: "sort".to_string(),
@@ -1331,9 +1340,9 @@ mod tests {
                 injection_context: Some(InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             },
             Param {
                 name: "id".to_string(),
@@ -1342,9 +1351,9 @@ mod tests {
                 injection_context: Some(InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             },
             Param {
                 name: "session".to_string(),
@@ -1353,9 +1362,9 @@ mod tests {
                 injection_context: Some(InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             },
         ];
 
@@ -1396,9 +1405,9 @@ mod tests {
                 injection_context: Some(InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             },
             Param {
                 name: "id".to_string(),
@@ -1407,9 +1416,9 @@ mod tests {
                 injection_context: Some(InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             },
             Param {
                 name: "session".to_string(),
@@ -1418,9 +1427,9 @@ mod tests {
                 injection_context: Some(InjectionContext::Html(None)),
                 valid_specials: None,
                 invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                pre_encoding: None,
+                form_action_url: None,
+                form_origin_url: None,
             },
         ];
 
@@ -1445,9 +1454,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         }];
 
         // Empty filters should return all params
@@ -1465,9 +1474,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         }];
 
         // Invalid filter format (too many colons) should be treated as name only
@@ -1573,9 +1582,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         }
     }
 

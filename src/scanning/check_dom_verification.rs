@@ -92,10 +92,16 @@ fn has_marker_evidence_in_doc(payload: &str, document: &scraper::Html) -> bool {
     let class_ok = if has_class || has_legacy_class {
         let mut found = false;
         if has_class {
-            found = document.select(cached_class_marker_selector()).next().is_some();
+            found = document
+                .select(cached_class_marker_selector())
+                .next()
+                .is_some();
         }
         if !found && has_legacy_class {
-            found = document.select(cached_legacy_class_selector()).next().is_some();
+            found = document
+                .select(cached_legacy_class_selector())
+                .next()
+                .is_some();
         }
         found
     } else {
@@ -105,10 +111,16 @@ fn has_marker_evidence_in_doc(payload: &str, document: &scraper::Html) -> bool {
     let id_ok = if has_id || has_legacy_id {
         let mut found = false;
         if has_id {
-            found = document.select(cached_id_marker_selector()).next().is_some();
+            found = document
+                .select(cached_id_marker_selector())
+                .next()
+                .is_some();
         }
         if !found && has_legacy_id {
-            found = document.select(cached_legacy_id_selector()).next().is_some();
+            found = document
+                .select(cached_legacy_id_selector())
+                .next()
+                .is_some();
         }
         found
     } else {
@@ -130,8 +142,7 @@ pub(crate) fn has_marker_evidence(payload: &str, text: &str) -> bool {
 /// Only ASCII bytes are case-folded; non-ASCII bytes are compared as-is.
 /// Callers must ensure `prefix` is ASCII (e.g. protocol schemes like "javascript:").
 fn starts_with_ascii_ci(s: &str, prefix: &str) -> bool {
-    s.len() >= prefix.len()
-        && s.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+    s.len() >= prefix.len() && s.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
 }
 
 fn payload_is_executable_url_protocol(payload: &str) -> bool {
@@ -147,10 +158,7 @@ fn is_dangerous_attr(name: &str) -> bool {
         .any(|&attr| name.eq_ignore_ascii_case(attr))
 }
 
-fn has_executable_url_attribute_evidence_in_doc(
-    payload: &str,
-    document: &scraper::Html,
-) -> bool {
+fn has_executable_url_attribute_evidence_in_doc(payload: &str, document: &scraper::Html) -> bool {
     if !payload_is_executable_url_protocol(payload) {
         return false;
     }
@@ -175,10 +183,7 @@ fn has_executable_url_attribute_evidence_in_doc(
 /// Catches realistic XSS payloads that don't embed a Dalfox marker, e.g.
 /// `<svg/onload=alert(1)>`, `<img src=x onerror=alert(1)>`,
 /// `<script>alert(1)</script>` from custom payload lists.
-fn has_html_structural_evidence_in_doc(
-    payload: &str,
-    document: &scraper::Html,
-) -> bool {
+fn has_html_structural_evidence_in_doc(payload: &str, document: &scraper::Html) -> bool {
     if !payload.contains('<') {
         return false;
     }
@@ -223,19 +228,6 @@ fn has_html_structural_evidence_in_doc(
     false
 }
 
-/// Run all DOM-evidence checks against a single parsed document. Used by
-/// `check_dom_verification` to avoid parsing the same response body twice.
-/// Short-circuits on the marker check when the payload carries one, which
-/// is the common case.
-///
-/// Four evidence paths:
-/// - DOM marker (class/id) found via CSS selector — the standard HTML/attr case
-/// - Executable URL protocol reflected into a dangerous attribute — `javascript:`/`data:`
-/// - HTML structural: parsed element with `on*` handler containing a sink call,
-///   OR `<script>` body containing a sink call, where the value/body appears
-///   verbatim in the payload (so it was introduced by the injection)
-/// - JS-context sink call expression introduced into an existing `<script>` block
-///   (e.g. `var x = "<INJECT>"` where the injection produces a real `alert(...)`)
 /// Cheap response-body heuristic: returns false for bodies that look like
 /// raw JSON/array payloads where browsers do not render the response as HTML.
 /// Used to gate the HTML structural-evidence check, which would otherwise
@@ -284,16 +276,25 @@ impl DomEvidenceKind {
 }
 
 /// Returns the evidence kind that confirms the payload is exploitable, or
-/// `None` if no evidence was found. Probes paths in this order: DOM marker,
-/// executable URL attribute, HTML structural, JS-context AST.
+/// `None` if no evidence was found. Used by `check_dom_verification` to avoid
+/// parsing the same response body twice; short-circuits on the marker check
+/// when the payload carries one, which is the common case.
+///
+/// Four evidence paths, probed in this order:
+/// - DOM marker (class/id) found via CSS selector — the standard HTML/attr case
+/// - Executable URL protocol reflected into a dangerous attribute — `javascript:`/`data:`
+/// - HTML structural: parsed element with `on*` handler containing a sink call,
+///   OR `<script>` body containing a sink call, where the value/body appears
+///   verbatim in the payload (so it was introduced by the injection)
+/// - JS-context sink call expression introduced into an existing `<script>` block
+///   (e.g. `var x = "<INJECT>"` where the injection produces a real `alert(...)`)
 pub(crate) fn classify_dom_evidence(payload: &str, text: &str) -> Option<DomEvidenceKind> {
     let needs_markers = payload_has_any_marker(payload);
     let needs_attrs = payload_is_executable_url_protocol(payload);
     let needs_html_struct = payload.contains('<')
         && crate::scanning::js_context_verify::payload_carries_js_sink(payload)
         && body_looks_html_renderable(text);
-    let needs_js =
-        crate::scanning::js_context_verify::payload_carries_js_sink(payload);
+    let needs_js = crate::scanning::js_context_verify::payload_carries_js_sink(payload);
     if !needs_markers && !needs_attrs && !needs_html_struct && !needs_js {
         return None;
     }
@@ -342,7 +343,9 @@ fn build_inject_request(
 ) -> reqwest::RequestBuilder {
     let default_method = target.parse_method();
     match param.location {
-        Location::Header => build_header_request(client, target, param, encoded_payload, default_method),
+        Location::Header => {
+            build_header_request(client, target, param, encoded_payload, default_method)
+        }
         Location::Body => build_body_request(client, target, param, encoded_payload),
         Location::JsonBody => build_json_body_request(client, target, param, encoded_payload),
         Location::MultipartBody => build_multipart_request(client, target, param, encoded_payload),
@@ -359,10 +362,8 @@ fn build_header_request(
 ) -> reqwest::RequestBuilder {
     let parsed_url = target.url.clone();
     if target.cookies.iter().any(|(name, _)| name == &param.name) {
-        let others = crate::utils::compose_cookie_header_excluding(
-            &target.cookies,
-            Some(&param.name),
-        );
+        let others =
+            crate::utils::compose_cookie_header_excluding(&target.cookies, Some(&param.name));
         let cookie_header = match others {
             Some(rest) if !rest.is_empty() => {
                 format!("{}={}; {}", param.name, encoded_payload, rest)
@@ -370,12 +371,16 @@ fn build_header_request(
             _ => format!("{}={}", param.name, encoded_payload),
         };
         crate::utils::build_request_with_cookie(
-            client, target, method, parsed_url, target.data.clone(), Some(cookie_header),
+            client,
+            target,
+            method,
+            parsed_url,
+            target.data.clone(),
+            Some(cookie_header),
         )
     } else {
-        let base = crate::utils::build_request(
-            client, target, method, parsed_url, target.data.clone(),
-        );
+        let base =
+            crate::utils::build_request(client, target, method, parsed_url, target.data.clone());
         crate::utils::apply_header_overrides(
             base,
             &[(param.name.clone(), encoded_payload.to_string())],
@@ -475,8 +480,12 @@ fn build_multipart_request(
     if let Some(ref data) = target.data {
         for pair in data.split('&') {
             if let Some((k, v)) = pair.split_once('=') {
-                let k = urlencoding::decode(k).unwrap_or(std::borrow::Cow::Borrowed(k)).to_string();
-                let v = urlencoding::decode(v).unwrap_or(std::borrow::Cow::Borrowed(v)).to_string();
+                let k = urlencoding::decode(k)
+                    .unwrap_or(std::borrow::Cow::Borrowed(k))
+                    .to_string();
+                let v = urlencoding::decode(v)
+                    .unwrap_or(std::borrow::Cow::Borrowed(v))
+                    .to_string();
                 if k == param.name {
                     form = form.text(k, encoded_payload.to_string());
                 } else {
@@ -500,8 +509,7 @@ fn build_url_inject_request(
 ) -> reqwest::RequestBuilder {
     let inject_url_str =
         crate::scanning::url_inject::build_injected_url(&target.url, param, encoded_payload);
-    let inject_url =
-        url::Url::parse(&inject_url_str).unwrap_or_else(|_| target.url.clone());
+    let inject_url = url::Url::parse(&inject_url_str).unwrap_or_else(|_| target.url.clone());
     crate::utils::build_request(client, target, method, inject_url, target.data.clone())
 }
 
@@ -513,7 +521,8 @@ async fn verify_sxss_dom(
     payload: &str,
     args: &crate::cmd::scan::ScanArgs,
 ) -> (bool, Option<String>) {
-    let check_urls = crate::scanning::check_reflection::resolve_sxss_check_urls(target, param, args);
+    let check_urls =
+        crate::scanning::check_reflection::resolve_sxss_check_urls(target, param, args);
     let retries = args.sxss_retries.max(1) as u64;
     for sxss_url in &check_urls {
         for attempt in 0u64..retries {
@@ -546,10 +555,7 @@ async fn verify_sxss_dom(
 }
 
 /// Verify DOM evidence from a normal (non-stored) injection response.
-async fn verify_normal_dom(
-    resp: reqwest::Response,
-    payload: &str,
-) -> (bool, Option<String>) {
+async fn verify_normal_dom(resp: reqwest::Response, payload: &str) -> (bool, Option<String>) {
     let status = resp.status();
     let headers = resp.headers().clone();
 
@@ -588,10 +594,7 @@ fn check_redirect_location(loc_str: &str, payload: &str) -> Option<(bool, Option
         return Some((true, Some(synthetic_body)));
     }
     if crate::scanning::check_reflection::classify_reflection(loc_str, payload).is_some() {
-        let synthetic_body = format!(
-            "<html><body>Redirect to: {}</body></html>",
-            loc_str
-        );
+        let synthetic_body = format!("<html><body>Redirect to: {}</body></html>", loc_str);
         return Some((true, Some(synthetic_body)));
     }
     None
@@ -612,7 +615,8 @@ pub async fn check_dom_verification_with_client(
     // Use encoded_payload for building the HTTP request, but keep `payload`
     // (the raw/original payload) for response body analysis — the server
     // decodes the encoding and reflects the raw content.
-    let encoded_payload = crate::encoding::pre_encoding::apply_pre_encoding(payload, &param.pre_encoding);
+    let encoded_payload =
+        crate::encoding::pre_encoding::apply_pre_encoding(payload, &param.pre_encoding);
 
     let inject_request = build_inject_request(client, target, param, &encoded_payload);
 
@@ -663,9 +667,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         }
     }
 
@@ -918,8 +922,14 @@ mod tests {
         let args = default_scan_args();
 
         let (found, body) = check_dom_verification(&target, &param, payload, &args).await;
-        assert!(!found, "application/json without marker should not pass DOM verification");
-        assert!(body.is_none(), "non-html responses without marker should not be returned");
+        assert!(
+            !found,
+            "application/json without marker should not pass DOM verification"
+        );
+        assert!(
+            body.is_none(),
+            "non-html responses without marker should not be returned"
+        );
     }
 
     #[tokio::test]
@@ -935,7 +945,10 @@ mod tests {
         let args = default_scan_args();
 
         let (found, _body) = check_dom_verification(&target, &param, &payload, &args).await;
-        assert!(found, "non-HTML responses with marker evidence should pass DOM verification for JSONP/JSON XSS");
+        assert!(
+            found,
+            "non-HTML responses with marker evidence should pass DOM verification for JSONP/JSON XSS"
+        );
     }
 
     #[tokio::test]
@@ -970,9 +983,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let args = default_scan_args();
 
@@ -1000,9 +1013,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let args = default_scan_args();
 
@@ -1032,9 +1045,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let args = default_scan_args();
 
@@ -1065,9 +1078,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let args = default_scan_args();
 
@@ -1176,10 +1189,7 @@ mod tests {
         // payload is not an executable URL protocol.
         let class_marker = crate::scanning::markers::class_marker();
         let payload = format!("<img class=\"{}\">", class_marker);
-        let body = format!(
-            "<html><body><img class=\"{}\"></body></html>",
-            class_marker
-        );
+        let body = format!("<html><body><img class=\"{}\"></body></html>", class_marker);
         assert!(has_dom_evidence(&payload, &body));
     }
 
@@ -1189,7 +1199,10 @@ mod tests {
         // inside a JS string-context reflection. No marker, no executable URL,
         // but the JS-context AST verifier should accept it.
         let payload = "\"-alert(1)-\"";
-        let body = format!("<html><body><script>var c2 = \"{}\";</script></body></html>", payload);
+        let body = format!(
+            "<html><body><script>var c2 = \"{}\";</script></body></html>",
+            payload
+        );
         assert!(has_dom_evidence(payload, &body));
     }
 
@@ -1198,7 +1211,10 @@ mod tests {
         // A payload that just becomes plain string text inside a JS literal
         // has no exploit potential — must not be treated as evidence.
         let payload = "\"hello\"";
-        let body = format!("<html><body><script>var x = \"{}\";</script></body></html>", payload);
+        let body = format!(
+            "<html><body><script>var x = \"{}\";</script></body></html>",
+            payload
+        );
         assert!(!has_dom_evidence(payload, &body));
     }
 
@@ -1257,10 +1273,7 @@ mod tests {
     fn test_classify_dom_evidence_returns_marker() {
         let class_marker = crate::scanning::markers::class_marker();
         let payload = format!("<img class=\"{}\">", class_marker);
-        let body = format!(
-            "<html><body><img class=\"{}\"></body></html>",
-            class_marker
-        );
+        let body = format!("<html><body><img class=\"{}\"></body></html>", class_marker);
         assert_eq!(
             classify_dom_evidence(&payload, &body),
             Some(DomEvidenceKind::Marker)
@@ -1280,7 +1293,10 @@ mod tests {
     #[test]
     fn test_classify_dom_evidence_returns_js_context() {
         let payload = "\"-alert(1)-\"";
-        let body = format!("<html><body><script>var c2 = \"{}\";</script></body></html>", payload);
+        let body = format!(
+            "<html><body><script>var c2 = \"{}\";</script></body></html>",
+            payload
+        );
         assert_eq!(
             classify_dom_evidence(payload, &body),
             Some(DomEvidenceKind::JsContext)

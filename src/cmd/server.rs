@@ -618,10 +618,9 @@ async fn run_scan_job(
 
     let final_results = {
         let locked = results.lock().await;
-        progress.findings_so_far.store(
-            locked.len() as u64,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        progress
+            .findings_so_far
+            .store(locked.len() as u64, std::sync::atomic::Ordering::Relaxed);
         locked
             .iter()
             .map(|r| r.to_sanitized(include_request, include_response))
@@ -631,7 +630,8 @@ async fn run_scan_job(
     let final_results_arc = Arc::new(final_results);
     let callback_url = {
         let mut jobs = state.jobs.lock().await;
-        let cb = if let Some(job) = jobs.get_mut(&job_id) {
+
+        if let Some(job) = jobs.get_mut(&job_id) {
             job.results = Some(final_results_arc.clone());
             if job.status != JobStatus::Cancelled {
                 job.status = if was_cancelled {
@@ -648,11 +648,14 @@ async fn run_scan_job(
             job.callback_url.clone()
         } else {
             None
-        };
-        cb
+        }
     };
     let status_label = if was_cancelled { "cancelled" } else { "done" };
-    log(&state, "JOB", &format!("{} id={} url={}", status_label, job_id, url));
+    log(
+        &state,
+        "JOB",
+        &format!("{} id={} url={}", status_label, job_id, url),
+    );
 
     // Fire webhook callback if configured (only http/https to mitigate SSRF)
     if let Some(cb_url) = callback_url
@@ -806,32 +809,53 @@ async fn get_result_handler(
 
     match job {
         Some(j) => {
-            let progress_data = if matches!(j.status, JobStatus::Running | JobStatus::Done | JobStatus::Cancelled) {
-                let params_total = j.progress.params_total.load(std::sync::atomic::Ordering::Relaxed);
-                let params_tested = j.progress.params_tested.load(std::sync::atomic::Ordering::Relaxed);
-                let estimated_completion_pct = if matches!(j.status, JobStatus::Done | JobStatus::Cancelled) {
-                    if j.status == JobStatus::Done { 100 } else if params_total > 0 {
-                        ((params_tested as f64 / params_total as f64) * 100.0) as u32
-                    } else { 0 }
-                } else if params_total > 0 {
-                    ((params_tested as f64 / params_total as f64) * 100.0).min(99.0) as u32
-                } else {
-                    0
-                };
-                let suggested_poll_interval_ms: u64 = if matches!(j.status, JobStatus::Done | JobStatus::Cancelled) {
-                    0
-                } else if estimated_completion_pct > 80 {
-                    1000
-                } else if estimated_completion_pct > 10 {
-                    3000
-                } else {
-                    2000
-                };
+            let progress_data = if matches!(
+                j.status,
+                JobStatus::Running | JobStatus::Done | JobStatus::Cancelled
+            ) {
+                let params_total = j
+                    .progress
+                    .params_total
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                let params_tested = j
+                    .progress
+                    .params_tested
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                let estimated_completion_pct =
+                    if matches!(j.status, JobStatus::Done | JobStatus::Cancelled) {
+                        if j.status == JobStatus::Done {
+                            100
+                        } else if params_total > 0 {
+                            ((params_tested as f64 / params_total as f64) * 100.0) as u32
+                        } else {
+                            0
+                        }
+                    } else if params_total > 0 {
+                        ((params_tested as f64 / params_total as f64) * 100.0).min(99.0) as u32
+                    } else {
+                        0
+                    };
+                let suggested_poll_interval_ms: u64 =
+                    if matches!(j.status, JobStatus::Done | JobStatus::Cancelled) {
+                        0
+                    } else if estimated_completion_pct > 80 {
+                        1000
+                    } else if estimated_completion_pct > 10 {
+                        3000
+                    } else {
+                        2000
+                    };
                 Some(ProgressPayload {
                     params_total,
                     params_tested,
-                    requests_sent: j.progress.requests_sent.load(std::sync::atomic::Ordering::Relaxed),
-                    findings_so_far: j.progress.findings_so_far.load(std::sync::atomic::Ordering::Relaxed),
+                    requests_sent: j
+                        .progress
+                        .requests_sent
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                    findings_so_far: j
+                        .progress
+                        .findings_so_far
+                        .load(std::sync::atomic::Ordering::Relaxed),
                     estimated_completion_pct,
                     suggested_poll_interval_ms,
                 })
@@ -1265,7 +1289,7 @@ async fn list_scans_handler(
         .iter()
         .filter(|(_, job)| filter_status.as_ref().is_none_or(|f| &job.status == f))
         .collect();
-    matching.sort_by(|a, b| b.1.queued_at_ms.cmp(&a.1.queued_at_ms));
+    matching.sort_by_key(|(_, job)| std::cmp::Reverse(job.queued_at_ms));
 
     let total = matching.len();
     let start = offset.min(total);
@@ -1394,7 +1418,9 @@ async fn preflight_handler(
         return make_api_response(&state, &headers, &params, StatusCode::BAD_REQUEST, &resp);
     }
 
-    let timeout_secs = opts.timeout.unwrap_or(crate::cmd::scan::DEFAULT_TIMEOUT_SECS);
+    let timeout_secs = opts
+        .timeout
+        .unwrap_or(crate::cmd::scan::DEFAULT_TIMEOUT_SECS);
 
     // Run the analysis on tokio's blocking pool (reused across calls) with a
     // current_thread runtime inside because analyze_parameters and scraper-
@@ -1473,8 +1499,7 @@ async fn preflight_handler(
                         } else {
                             let html_len =
                                 crate::payload::get_dynamic_xss_html_payloads().len() * enc_factor;
-                            let js_len =
-                                crate::payload::XSS_JAVASCRIPT_PAYLOADS.len() * enc_factor;
+                            let js_len = crate::payload::XSS_JAVASCRIPT_PAYLOADS.len() * enc_factor;
                             html_len + js_len
                         };
                         estimated_requests = estimated_requests.saturating_add(payload_count);
@@ -1517,7 +1542,11 @@ async fn preflight_handler(
             make_api_response(&state, &headers, &params, StatusCode::BAD_REQUEST, &resp)
         }
         Err(PreflightError::RuntimeUnavailable(msg)) => {
-            log(&state, "ERR", &format!("preflight runtime build failed: {}", msg));
+            log(
+                &state,
+                "ERR",
+                &format!("preflight runtime build failed: {}", msg),
+            );
             let resp = ApiResponse::<serde_json::Value> {
                 code: 500,
                 msg: "preflight runtime unavailable".to_string(),
@@ -1702,11 +1731,7 @@ mod tests {
 
     /// Build a synthetic Job for tests. Non-terminal jobs get no finished_at;
     /// terminal jobs get `now_ms()` so retention tests can bracket around them.
-    fn test_job(
-        status: JobStatus,
-        results: Option<Vec<SanitizedResult>>,
-        target_url: &str,
-    ) -> Job {
+    fn test_job(status: JobStatus, results: Option<Vec<SanitizedResult>>, target_url: &str) -> Job {
         let mut job = Job::new_queued(target_url.to_string());
         job.status = status.clone();
         job.results = results.map(Arc::new);
@@ -2231,11 +2256,17 @@ mod tests {
         let job = jobs.get(&id).expect("job should be inserted");
         // The spawned task may move from Queued to Running/Done/Error very quickly
         assert!(
-            matches!(job.status, JobStatus::Queued | JobStatus::Running | JobStatus::Done | JobStatus::Error),
+            matches!(
+                job.status,
+                JobStatus::Queued | JobStatus::Running | JobStatus::Done | JobStatus::Error
+            ),
             "job should have been created with a valid status, got: {:?}",
             job.status
         );
-        assert!(job.queued_at_ms > 0, "queued_at_ms must be set on submission");
+        assert!(
+            job.queued_at_ms > 0,
+            "queued_at_ms must be set on submission"
+        );
     }
 
     #[tokio::test]
@@ -2342,7 +2373,10 @@ mod tests {
         assert!(body.starts_with("getCb("));
         let inner = body.trim_start_matches("getCb(").trim_end_matches(");");
         let parsed: serde_json::Value = serde_json::from_str(inner).expect("jsonp payload");
-        let id = parsed["data"]["scan_id"].as_str().expect("scan id").to_string();
+        let id = parsed["data"]["scan_id"]
+            .as_str()
+            .expect("scan id")
+            .to_string();
 
         let jobs = state.jobs.lock().await;
         let job = jobs.get(&id).expect("job inserted");
@@ -2350,7 +2384,10 @@ mod tests {
             job.status,
             JobStatus::Queued | JobStatus::Running | JobStatus::Done | JobStatus::Error
         ));
-        assert!(job.queued_at_ms > 0, "queued_at_ms must be set on submission");
+        assert!(
+            job.queued_at_ms > 0,
+            "queued_at_ms must be set on submission"
+        );
     }
 
     #[tokio::test]
@@ -2418,10 +2455,7 @@ mod tests {
         let id = "done-jsonp".to_string();
         {
             let mut jobs = state.jobs.lock().await;
-            jobs.insert(
-                id.clone(),
-                test_job(JobStatus::Done, Some(Vec::new()), ""),
-            );
+            jobs.insert(id.clone(), test_job(JobStatus::Done, Some(Vec::new()), ""));
         }
 
         let mut q = Map::new();
@@ -2453,7 +2487,10 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body = response_body_string(resp).await;
         let parsed: serde_json::Value = serde_json::from_str(&body).expect("json body");
-        let id = parsed["data"]["scan_id"].as_str().expect("scan id").to_string();
+        let id = parsed["data"]["scan_id"]
+            .as_str()
+            .expect("scan id")
+            .to_string();
 
         let jobs = state.jobs.lock().await;
         let job = jobs.get(&id).expect("job inserted");
@@ -2461,7 +2498,10 @@ mod tests {
             job.status,
             JobStatus::Queued | JobStatus::Running | JobStatus::Done | JobStatus::Error
         ));
-        assert!(job.queued_at_ms > 0, "queued_at_ms must be set on submission");
+        assert!(
+            job.queued_at_ms > 0,
+            "queued_at_ms must be set on submission"
+        );
     }
 
     #[tokio::test]
@@ -2575,13 +2615,9 @@ mod tests {
             }
         }
 
-        let resp = list_scans_handler(
-            State(state),
-            HeaderMap::new(),
-            Query(Map::new()),
-        )
-        .await
-        .into_response();
+        let resp = list_scans_handler(State(state), HeaderMap::new(), Query(Map::new()))
+            .await
+            .into_response();
         assert_eq!(resp.status(), StatusCode::OK);
 
         let body = response_body_string(resp).await;
@@ -2602,13 +2638,9 @@ mod tests {
 
         let mut params = Map::new();
         params.insert("status".to_string(), "done".to_string());
-        let resp = list_scans_handler(
-            State(state),
-            HeaderMap::new(),
-            Query(params),
-        )
-        .await
-        .into_response();
+        let resp = list_scans_handler(State(state), HeaderMap::new(), Query(params))
+            .await
+            .into_response();
         assert_eq!(resp.status(), StatusCode::OK);
 
         let body = response_body_string(resp).await;
@@ -2620,13 +2652,9 @@ mod tests {
     #[tokio::test]
     async fn test_list_scans_handler_requires_auth() {
         let state = make_state(Some("secret"), None, false, false, "cb");
-        let resp = list_scans_handler(
-            State(state),
-            HeaderMap::new(),
-            Query(Map::new()),
-        )
-        .await
-        .into_response();
+        let resp = list_scans_handler(State(state), HeaderMap::new(), Query(Map::new()))
+            .await
+            .into_response();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
@@ -2826,9 +2854,15 @@ mod tests {
         purge_expired_jobs(&state).await;
 
         let jobs = state.jobs.lock().await;
-        assert!(!jobs.contains_key("old"), "old terminal job should be purged");
+        assert!(
+            !jobs.contains_key("old"),
+            "old terminal job should be purged"
+        );
         assert!(jobs.contains_key("fresh"), "fresh terminal job must remain");
-        assert!(jobs.contains_key("active"), "active job must never be purged");
+        assert!(
+            jobs.contains_key("active"),
+            "active job must never be purged"
+        );
     }
 
     #[tokio::test]
@@ -2854,7 +2888,10 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::CONFLICT);
 
         let jobs = state.jobs.lock().await;
-        assert!(jobs.contains_key("running-purge"), "non-terminal job must not be purged");
+        assert!(
+            jobs.contains_key("running-purge"),
+            "non-terminal job must not be purged"
+        );
     }
 
     #[tokio::test]
@@ -2928,7 +2965,10 @@ mod tests {
         let state = make_state(None, None, false, false, "cb");
         {
             let mut jobs = state.jobs.lock().await;
-            jobs.insert("done-purge".to_string(), test_job(JobStatus::Done, None, ""));
+            jobs.insert(
+                "done-purge".to_string(),
+                test_job(JobStatus::Done, None, ""),
+            );
         }
         let mut params = Map::new();
         params.insert("purge".to_string(), "1".to_string());

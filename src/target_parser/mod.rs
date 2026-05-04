@@ -204,7 +204,9 @@ pub fn parse_raw_http_request(raw: &str) -> Result<Target, Box<dyn std::error::E
 
     // 3) Body (remaining lines after the first blank line)
     let body = lines.fold(String::new(), |mut acc, l| {
-        if !acc.is_empty() { acc.push('\n'); }
+        if !acc.is_empty() {
+            acc.push('\n');
+        }
         acc.push_str(l);
         acc
     });

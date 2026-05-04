@@ -722,7 +722,12 @@ mod tests {
         let (name, value) = preflight.csp_header.expect("meta csp should be parsed");
         assert_eq!(name, "Content-Security-Policy-Report-Only");
         assert_eq!(value, "script-src 'none'");
-        assert!(preflight.response_body.expect("body expected").contains("http-equiv"));
+        assert!(
+            preflight
+                .response_body
+                .expect("body expected")
+                .contains("http-equiv")
+        );
     }
 }
 
@@ -779,8 +784,7 @@ async fn preflight_content_type(
 
     // Prefer HEAD for fast Content-Type detection
     // build_preflight_request already applies headers, UA, and cookies consistently
-    let request_builder =
-        crate::utils::build_preflight_request(&client, target, true, Some(8192));
+    let request_builder = crate::utils::build_preflight_request(&client, target, true, Some(8192));
     if target.delay > 0 {
         tokio::time::sleep(Duration::from_millis(target.delay)).await;
     }
@@ -794,10 +798,7 @@ async fn preflight_content_type(
             // when --silence is on; the debug channel always carries it.
             let reason = describe_reqwest_failure(&e);
             if crate::DEBUG.load(std::sync::atomic::Ordering::Relaxed) {
-                eprintln!(
-                    "[DBG] preflight unreachable: {} ({})",
-                    target.url, reason
-                );
+                eprintln!("[DBG] preflight unreachable: {} ({})", target.url, reason);
             }
             if !args.silence {
                 let ts = chrono::Local::now().format("%-I:%M%p").to_string();
@@ -853,12 +854,14 @@ async fn preflight_content_type(
 
             // WAF detection from GET response (headers + body)
             if args.waf_bypass != "off" {
-                let body_waf = crate::waf::fingerprint_from_response(&get_headers, Some(&body), get_status);
+                let body_waf =
+                    crate::waf::fingerprint_from_response(&get_headers, Some(&body), get_status);
                 crate::waf::merge_results(&mut waf_result, body_waf);
             }
 
             // Technology/framework detection from GET response
-            tech_result = crate::scanning::tech_detect::detect_technologies(&get_headers, Some(&body));
+            tech_result =
+                crate::scanning::tech_detect::detect_technologies(&get_headers, Some(&body));
 
             // Only parse CSP if not already found
             if csp_header.is_none() {
@@ -1372,8 +1375,7 @@ fn domain_matches_pattern(host: &str, pattern: &str) -> bool {
     let pattern_lower = pattern.to_lowercase();
     if let Some(base) = pattern_lower.strip_prefix("*.") {
         // Match exact subdomain boundary: host must end with ".base" or equal "base"
-        host_lower == base
-            || host_lower.ends_with(&format!(".{}", base))
+        host_lower == base || host_lower.ends_with(&format!(".{}", base))
     } else {
         host_lower == pattern_lower
     }
@@ -1508,7 +1510,11 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                 "pipe".to_string()
             } else {
                 if !args.silence {
-                    emit_error(&args.format, crate::cmd::error_codes::NO_TARGETS, "No targets specified");
+                    emit_error(
+                        &args.format,
+                        crate::cmd::error_codes::NO_TARGETS,
+                        "No targets specified",
+                    );
                 }
                 return ScanOutcome::Error;
             }
@@ -1563,7 +1569,11 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
             "file" => {
                 if args.targets.is_empty() {
                     if !args.silence {
-                        emit_error(&args.format, crate::cmd::error_codes::NO_FILE, "No file specified for input-type=file");
+                        emit_error(
+                            &args.format,
+                            crate::cmd::error_codes::NO_FILE,
+                            "No file specified for input-type=file",
+                        );
                     }
                     return ScanOutcome::Error;
                 }
@@ -1572,7 +1582,11 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                     Ok(content) => content.lines().map(|s| s.to_string()).collect(),
                     Err(e) => {
                         if !args.silence {
-                            emit_error(&args.format, crate::cmd::error_codes::FILE_READ_ERROR, &format!("Error reading file {}: {}", file_path, e));
+                            emit_error(
+                                &args.format,
+                                crate::cmd::error_codes::FILE_READ_ERROR,
+                                &format!("Error reading file {}: {}", file_path, e),
+                            );
                         }
                         return ScanOutcome::Error;
                     }
@@ -1594,7 +1608,11 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                         .collect(),
                     Err(e) => {
                         if !args.silence {
-                            emit_error(&args.format, crate::cmd::error_codes::STDIN_ERROR, &format!("Error reading from stdin: {}", e));
+                            emit_error(
+                                &args.format,
+                                crate::cmd::error_codes::STDIN_ERROR,
+                                &format!("Error reading from stdin: {}", e),
+                            );
                         }
                         return ScanOutcome::Error;
                     }
@@ -1607,10 +1625,14 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
 
             _ => {
                 if !args.silence {
-                    emit_error(&args.format, crate::cmd::error_codes::INVALID_INPUT_TYPE, &format!(
-                        "Invalid input-type '{}'. Use 'auto', 'url', 'file', 'pipe', or 'raw-http'",
-                        input_type
-                    ));
+                    emit_error(
+                        &args.format,
+                        crate::cmd::error_codes::INVALID_INPUT_TYPE,
+                        &format!(
+                            "Invalid input-type '{}'. Use 'auto', 'url', 'file', 'pipe', or 'raw-http'",
+                            input_type
+                        ),
+                    );
                 }
                 return ScanOutcome::Error;
             }
@@ -1619,7 +1641,11 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
 
     if target_strings.is_empty() {
         if !args.silence {
-            emit_error(&args.format, crate::cmd::error_codes::NO_TARGETS, "No targets specified");
+            emit_error(
+                &args.format,
+                crate::cmd::error_codes::NO_TARGETS,
+                "No targets specified",
+            );
         }
         return ScanOutcome::Error;
     }
@@ -1671,7 +1697,11 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                 }
                 Err(e) => {
                     if !args.silence {
-                        emit_error(&args.format, crate::cmd::error_codes::PARSE_ERROR, &format!("Error parsing raw HTTP request '{}': {}", s, e));
+                        emit_error(
+                            &args.format,
+                            crate::cmd::error_codes::PARSE_ERROR,
+                            &format!("Error parsing raw HTTP request '{}': {}", s, e),
+                        );
                     }
                     return ScanOutcome::Error;
                 }
@@ -1722,7 +1752,11 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                 }
                 Err(e) => {
                     if !args.silence {
-                        emit_error(&args.format, crate::cmd::error_codes::PARSE_ERROR, &format!("Error parsing target '{}': {}", s, e));
+                        emit_error(
+                            &args.format,
+                            crate::cmd::error_codes::PARSE_ERROR,
+                            &format!("Error parsing target '{}': {}", s, e),
+                        );
                     }
                     return ScanOutcome::Error;
                 }
@@ -1741,20 +1775,28 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
 
     // Apply URL scope filtering (--include-url / --exclude-url)
     {
-        let include_patterns: Vec<regex::Regex> = args.include_url.iter()
+        let include_patterns: Vec<regex::Regex> = args
+            .include_url
+            .iter()
             .filter_map(|p| match regex::Regex::new(p) {
                 Ok(r) => Some(r),
                 Err(e) => {
-                    if !args.silence { eprintln!("Warning: invalid --include-url pattern '{}': {}", p, e); }
+                    if !args.silence {
+                        eprintln!("Warning: invalid --include-url pattern '{}': {}", p, e);
+                    }
                     None
                 }
             })
             .collect();
-        let exclude_patterns: Vec<regex::Regex> = args.exclude_url.iter()
+        let exclude_patterns: Vec<regex::Regex> = args
+            .exclude_url
+            .iter()
             .filter_map(|p| match regex::Regex::new(p) {
                 Ok(r) => Some(r),
                 Err(e) => {
-                    if !args.silence { eprintln!("Warning: invalid --exclude-url pattern '{}': {}", p, e); }
+                    if !args.silence {
+                        eprintln!("Warning: invalid --exclude-url pattern '{}': {}", p, e);
+                    }
                     None
                 }
             })
@@ -1765,7 +1807,9 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
             parsed_targets.retain(|t| {
                 let url_str = t.url.as_str();
                 // If include patterns are set, URL must match at least one
-                if !include_patterns.is_empty() && !include_patterns.iter().any(|r| r.is_match(url_str)) {
+                if !include_patterns.is_empty()
+                    && !include_patterns.iter().any(|r| r.is_match(url_str))
+                {
                     return false;
                 }
                 // If exclude patterns are set, URL must not match any
@@ -1795,7 +1839,10 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                     }
                 }
                 Err(e) => {
-                    log_warn(&format!("failed to read --out-of-scope-file '{}': {}", path, e));
+                    log_warn(&format!(
+                        "failed to read --out-of-scope-file '{}': {}",
+                        path, e
+                    ));
                 }
             }
         }
@@ -1806,22 +1853,33 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                     Some(h) => h,
                     None => return true,
                 };
-                !oos_domains.iter().any(|pattern| domain_matches_pattern(host, pattern))
+                !oos_domains
+                    .iter()
+                    .any(|pattern| domain_matches_pattern(host, pattern))
             });
             let filtered = before - parsed_targets.len();
             if filtered > 0 {
-                log_info(&format!("out-of-scope filter: {} target(s) excluded", filtered));
+                log_info(&format!(
+                    "out-of-scope filter: {} target(s) excluded",
+                    filtered
+                ));
             }
         }
     }
 
     if args.hpp {
-        log_info("HPP (HTTP Parameter Pollution) enabled — duplicate query params will be tested for WAF bypass");
+        log_info(
+            "HPP (HTTP Parameter Pollution) enabled — duplicate query params will be tested for WAF bypass",
+        );
     }
 
     if parsed_targets.is_empty() {
         if !args.silence {
-            emit_error(&args.format, crate::cmd::error_codes::NO_TARGETS, "No targets specified");
+            emit_error(
+                &args.format,
+                crate::cmd::error_codes::NO_TARGETS,
+                "No targets specified",
+            );
         }
         return ScanOutcome::Error;
     }
@@ -2420,7 +2478,8 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                             .unwrap_or_else(|_| vec![])
                             .len()
                     } else {
-                        let html_len = crate::payload::get_dynamic_xss_html_payloads().len() * enc_factor;
+                        let html_len =
+                            crate::payload::get_dynamic_xss_html_payloads().len() * enc_factor;
                         let js_len = crate::payload::XSS_JAVASCRIPT_PAYLOADS.len() * enc_factor;
                         html_len + js_len
                     };
@@ -2474,7 +2533,10 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                 "targets": dry_run_targets,
             });
             if args.format == "json" {
-                println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&output).unwrap_or_default()
+                );
             } else {
                 println!("{}", serde_json::to_string(&output).unwrap_or_default());
             }
@@ -2487,10 +2549,18 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
             println!("  Estimated requests:  {}", total_estimated);
             println!();
             for t in &dry_run_targets {
-                println!("  {} ({}):", t["target"].as_str().unwrap_or("?"), t["method"].as_str().unwrap_or("?"));
+                println!(
+                    "  {} ({}):",
+                    t["target"].as_str().unwrap_or("?"),
+                    t["method"].as_str().unwrap_or("?")
+                );
                 if let Some(params) = t["params"].as_array() {
                     for p in params {
-                        println!("    - {} ({})", p["name"].as_str().unwrap_or("?"), p["location"].as_str().unwrap_or("?"));
+                        println!(
+                            "    - {} ({})",
+                            p["name"].as_str().unwrap_or("?"),
+                            p["location"].as_str().unwrap_or("?")
+                        );
                     }
                 }
                 println!("    estimated_requests: {}", t["estimated_requests"]);
@@ -2695,7 +2765,10 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                 .filter(|r| r.data.starts_with(prefix))
                 .count();
             let (status, error_code) = if skipped.contains(url) {
-                ("skipped", Some(crate::cmd::error_codes::CONTENT_TYPE_MISMATCH))
+                (
+                    "skipped",
+                    Some(crate::cmd::error_codes::CONTENT_TYPE_MISMATCH),
+                )
             } else if finding_count > 0 {
                 ("findings", None)
             } else {

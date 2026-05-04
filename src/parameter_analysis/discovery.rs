@@ -17,7 +17,9 @@
 //! Respects `--skip-discovery`, `--skip-reflection-header`, etc.
 
 use crate::cmd::scan::ScanArgs;
-use crate::parameter_analysis::{Location, Param, classify_special_chars, detect_injection_context};
+use crate::parameter_analysis::{
+    Location, Param, classify_special_chars, detect_injection_context,
+};
 use crate::scanning::url_inject::build_injected_url;
 use crate::target_parser::Target;
 use scraper;
@@ -40,8 +42,7 @@ fn json_stringify_regex() -> &'static regex::Regex {
 fn json_key_regex() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        regex::Regex::new(r#"["']?(\w+)["']?\s*:"#)
-            .expect("json_key_regex is a valid pattern")
+        regex::Regex::new(r#"["']?(\w+)["']?\s*:"#).expect("json_key_regex is a valid pattern")
     })
 }
 
@@ -79,10 +80,7 @@ pub async fn check_discovery(
 ///
 /// No HTTP requests are needed because fragments are client-side only (never sent to the server).
 /// These params are relevant for DOM XSS detection where JavaScript reads `location.hash`.
-pub async fn check_fragment_discovery(
-    target: &Target,
-    reflection_params: Arc<Mutex<Vec<Param>>>,
-) {
+pub async fn check_fragment_discovery(target: &Target, reflection_params: Arc<Mutex<Vec<Param>>>) {
     let frag = match target.url.fragment() {
         Some(f) if !f.is_empty() => f,
         _ => return,
@@ -115,7 +113,10 @@ pub async fn check_fragment_discovery(
             continue;
         }
         // Avoid duplicates
-        if params.iter().any(|p| p.name == key && p.location == Location::Fragment) {
+        if params
+            .iter()
+            .any(|p| p.name == key && p.location == Location::Fragment)
+        {
             continue;
         }
         params.push(Param {
@@ -169,7 +170,10 @@ pub async fn check_query_discovery(
 
         // Spawn a task that returns Option<Param> instead of locking per discovery.
         let handle = tokio::spawn(async move {
-            let permit = semaphore_clone.acquire().await.expect("acquire semaphore permit");
+            let permit = semaphore_clone
+                .acquire()
+                .await
+                .expect("acquire semaphore permit");
             let m = parsed_method;
             let request =
                 crate::utils::build_request(&client_clone, &target_clone, m, url, data.clone());
@@ -201,25 +205,25 @@ pub async fn check_query_discovery(
                         ),
                         valid_specials: None,
                         invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+                        pre_encoding: None,
+                        form_action_url: None,
+                        form_origin_url: None,
                     });
-                } else if let Ok(text) = resp.text().await {
-                    if text.contains(test_value) {
-                        let (valid, invalid) = classify_special_chars(&text);
-                        discovered = Some(Param {
-                            name,
-                            value,
-                            location: crate::parameter_analysis::Location::Query,
-                            injection_context: Some(detect_injection_context(&text)),
-                            valid_specials: Some(valid),
-                            invalid_specials: Some(invalid),
-                            pre_encoding: None,
-                            form_action_url: None,
-                            form_origin_url: None,
-                        });
-                    }
+                } else if let Ok(text) = resp.text().await
+                    && text.contains(test_value)
+                {
+                    let (valid, invalid) = classify_special_chars(&text);
+                    discovered = Some(Param {
+                        name,
+                        value,
+                        location: crate::parameter_analysis::Location::Query,
+                        injection_context: Some(detect_injection_context(&text)),
+                        valid_specials: Some(valid),
+                        invalid_specials: Some(invalid),
+                        pre_encoding: None,
+                        form_action_url: None,
+                        form_origin_url: None,
+                    });
                 }
             }
             if delay > 0 {
@@ -264,9 +268,7 @@ pub async fn check_query_discovery(
             }
             let _permit = semaphore.acquire().await.expect("acquire semaphore permit");
             let m = target.parse_method();
-            let request = crate::utils::build_request(
-                &client, target, m, url, target.data.clone(),
-            );
+            let request = crate::utils::build_request(&client, target, m, url, target.data.clone());
             crate::tick_request_count();
             if let Ok(resp) = request.send().await
                 && let Ok(text) = resp.text().await
@@ -321,8 +323,7 @@ pub async fn check_query_discovery(
             let url = url::Url::parse(&url_str).expect("valid URL");
             let _permit = semaphore.acquire().await.expect("acquire semaphore permit");
             let m = target.parse_method();
-            let request =
-                crate::utils::build_request(&client, target, m, url, target.data.clone());
+            let request = crate::utils::build_request(&client, target, m, url, target.data.clone());
             crate::tick_request_count();
             if let Ok(resp) = request.send().await
                 && let Ok(text) = resp.text().await
@@ -337,7 +338,7 @@ pub async fn check_query_discovery(
                         crate::parameter_analysis::mining::detect_injection_context_with_marker(
                             &text,
                             numeric_marker,
-                        )
+                        ),
                     ),
                     valid_specials: None,
                     invalid_specials: None,
@@ -361,8 +362,7 @@ pub async fn check_query_discovery(
         url.query_pairs_mut().append_pair(test_value, "1");
         let _permit = semaphore.acquire().await.expect("acquire semaphore permit");
         let m = target.parse_method();
-        let request =
-            crate::utils::build_request(&client, target, m, url, target.data.clone());
+        let request = crate::utils::build_request(&client, target, m, url, target.data.clone());
         crate::tick_request_count();
         if let Ok(resp) = request.send().await
             && let Ok(text) = resp.text().await
@@ -448,7 +448,10 @@ pub async fn check_header_discovery(
 
         // Spawn task returning Option<Param> to batch reduce mutex contention
         let handle = tokio::spawn(async move {
-            let permit = semaphore_clone.acquire().await.expect("acquire semaphore permit");
+            let permit = semaphore_clone
+                .acquire()
+                .await
+                .expect("acquire semaphore permit");
             let m = parsed_method;
             let base =
                 crate::utils::build_request(&client_clone, &target_clone, m, url, data.clone());
@@ -550,7 +553,10 @@ pub async fn check_path_discovery(
 
         // Spawn task returning Option<Param> for batched collection
         let handle = tokio::spawn(async move {
-            let permit = semaphore_clone.acquire().await.expect("acquire semaphore permit");
+            let permit = semaphore_clone
+                .acquire()
+                .await
+                .expect("acquire semaphore permit");
             let m = parsed_method;
             let request =
                 crate::utils::build_request(&client_clone, &target_clone, m, new_url, data.clone());
@@ -624,7 +630,10 @@ pub async fn check_cookie_discovery(
 
         // Spawn task returning Option<Param> for batched collection
         let handle = tokio::spawn(async move {
-            let permit = semaphore_clone.acquire().await.expect("acquire semaphore permit");
+            let permit = semaphore_clone
+                .acquire()
+                .await
+                .expect("acquire semaphore permit");
             let m = parsed_method;
             // Compose cookie header overriding the probed cookie while preserving others
             let others =
@@ -837,11 +846,12 @@ pub async fn check_form_discovery(
             for (field_idx, (field_name, field_value)) in fields.iter().enumerate() {
                 let _permit = semaphore.acquire().await.expect("acquire semaphore permit");
                 // Build body by joining pre-encoded pairs, substituting the target field
-                let body = encoded_fields
-                    .iter()
-                    .enumerate()
-                    .fold(String::new(), |mut acc, (i, (enc_n, enc_v))| {
-                        if !acc.is_empty() { acc.push('&'); }
+                let body = encoded_fields.iter().enumerate().fold(
+                    String::new(),
+                    |mut acc, (i, (enc_n, enc_v))| {
+                        if !acc.is_empty() {
+                            acc.push('&');
+                        }
                         acc.push_str(enc_n);
                         acc.push('=');
                         if i == field_idx {
@@ -850,7 +860,8 @@ pub async fn check_form_discovery(
                             acc.push_str(enc_v);
                         }
                         acc
-                    });
+                    },
+                );
                 let m = reqwest::Method::POST;
                 let rb =
                     crate::utils::build_request(&client, target, m, form_url.clone(), Some(body));
@@ -901,8 +912,7 @@ pub async fn check_form_discovery(
                     }
                 }
                 let m = reqwest::Method::GET;
-                let rb =
-                    crate::utils::build_request(&client, target, m, test_url.clone(), None);
+                let rb = crate::utils::build_request(&client, target, m, test_url.clone(), None);
                 crate::tick_request_count();
                 if let Ok(resp) = rb.send().await
                     && let Ok(text) = resp.text().await
@@ -938,13 +948,8 @@ pub async fn check_form_discovery(
                 serde_json::Value::Object(map).to_string()
             };
             let m = reqwest::Method::POST;
-            let rb = crate::utils::build_request(
-                &client,
-                target,
-                m,
-                form_url.clone(),
-                Some(json_body),
-            );
+            let rb =
+                crate::utils::build_request(&client, target, m, form_url.clone(), Some(json_body));
             let rb = crate::utils::apply_header_overrides(
                 rb,
                 &[("Content-Type".to_string(), "application/json".to_string())],
@@ -963,9 +968,9 @@ pub async fn check_form_discovery(
                         injection_context: Some(detect_injection_context(&text)),
                         valid_specials: Some(valid.clone()),
                         invalid_specials: Some(invalid.clone()),
-                    pre_encoding: None,
-                    form_action_url: Some(form_url.to_string()),
-                    form_origin_url: Some(target.url.to_string()),
+                        pre_encoding: None,
+                        form_action_url: Some(form_url.to_string()),
+                        form_origin_url: Some(target.url.to_string()),
                     });
                 }
             }
@@ -983,22 +988,35 @@ pub async fn check_form_discovery(
         for caps in inline_re.captures_iter(&html) {
             let full = caps.get(0).map(|m| m.as_str()).unwrap_or("");
             // Try to parse as JSON
-            if let Ok(serde_json::Value::Object(obj)) = serde_json::from_str::<serde_json::Value>(full) {
+            if let Ok(serde_json::Value::Object(obj)) =
+                serde_json::from_str::<serde_json::Value>(full)
+            {
                 let keys: Vec<String> = obj.keys().cloned().collect();
-                if keys.is_empty() { continue; }
+                if keys.is_empty() {
+                    continue;
+                }
                 // Skip if all keys are already known
                 let all_known = {
                     let guard = reflection_params.lock().await;
-                    keys.iter().all(|k| guard.iter().any(|p| p.name == *k && matches!(p.location, Location::JsonBody)))
+                    keys.iter().all(|k| {
+                        guard
+                            .iter()
+                            .any(|p| p.name == *k && matches!(p.location, Location::JsonBody))
+                    })
                 };
-                if all_known { continue; }
+                if all_known {
+                    continue;
+                }
 
                 for key in &keys {
                     let _permit = semaphore.acquire().await.expect("acquire semaphore permit");
                     let mut map = serde_json::Map::new();
                     for (k, v) in &obj {
                         if k == key {
-                            map.insert(k.clone(), serde_json::Value::String(test_value.to_string()));
+                            map.insert(
+                                k.clone(),
+                                serde_json::Value::String(test_value.to_string()),
+                            );
                         } else {
                             map.insert(k.clone(), v.clone());
                         }
@@ -1006,7 +1024,11 @@ pub async fn check_form_discovery(
                     let json_body = serde_json::Value::Object(map).to_string();
                     let m = reqwest::Method::POST;
                     let rb = crate::utils::build_request(
-                        &client, target, m, target.url.clone(), Some(json_body),
+                        &client,
+                        target,
+                        m,
+                        target.url.clone(),
+                        Some(json_body),
                     );
                     let rb = crate::utils::apply_header_overrides(
                         rb,
@@ -1062,7 +1084,10 @@ pub async fn check_form_discovery(
                     let mut map = serde_json::Map::new();
                     for (n, v) in &json_fields {
                         if n == field_name {
-                            map.insert(n.clone(), serde_json::Value::String(test_value.to_string()));
+                            map.insert(
+                                n.clone(),
+                                serde_json::Value::String(test_value.to_string()),
+                            );
                         } else {
                             map.insert(n.clone(), serde_json::Value::String(v.clone()));
                         }
@@ -1278,8 +1303,14 @@ mod tests {
         check_header_discovery(&target, reflection_params.clone(), semaphore).await;
 
         let params = reflection_params.lock().await.clone();
-        assert!(!params.is_empty(), "should discover at least the explicit header");
-        let p = params.iter().find(|p| p.name == "X-Reflect-Me").expect("X-Reflect-Me should be discovered");
+        assert!(
+            !params.is_empty(),
+            "should discover at least the explicit header"
+        );
+        let p = params
+            .iter()
+            .find(|p| p.name == "X-Reflect-Me")
+            .expect("X-Reflect-Me should be discovered");
         assert_eq!(p.value, "orig");
         assert_eq!(p.location, Location::Header);
         assert!(p.injection_context.is_some());
@@ -1386,9 +1417,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         }]));
 
         let semaphore = Arc::new(Semaphore::new(1));

@@ -216,8 +216,7 @@ async fn run_ast_dom_analysis(
     ast_seen: &mut HashSet<String>,
 ) -> Vec<crate::scanning::result::Result> {
     let mut results = Vec::new();
-    let js_blocks =
-        crate::scanning::ast_integration::extract_javascript_from_html(response_text);
+    let js_blocks = crate::scanning::ast_integration::extract_javascript_from_html(response_text);
     for js_code in js_blocks {
         let findings = crate::scanning::ast_integration::analyze_javascript_for_dom_xss(
             &js_code,
@@ -237,8 +236,7 @@ async fn run_ast_dom_analysis(
                 continue;
             }
             ast_seen.insert(ast_key);
-            let source_uses_url_surface =
-                ast_source_uses_browser_url_surface(&vuln.source);
+            let source_uses_url_surface = ast_source_uses_browser_url_surface(&vuln.source);
             let result_url = if source_uses_url_surface {
                 crate::scanning::ast_integration::build_dom_xss_poc_url(
                     target.url.as_str(),
@@ -246,11 +244,7 @@ async fn run_ast_dom_analysis(
                     &payload,
                 )
             } else {
-                crate::scanning::url_inject::build_injected_url(
-                    &target.url,
-                    param,
-                    &payload,
-                )
+                crate::scanning::url_inject::build_injected_url(&target.url, param, &payload)
             };
             let mut ast_result = crate::scanning::result::Result::new(
                 FindingType::AstDetected,
@@ -274,17 +268,13 @@ async fn run_ast_dom_analysis(
                 format!("{} (검증 필요)", description),
             );
             if !source_uses_url_surface {
-                ast_result.request =
-                    Some(build_request_text(target, param, &payload));
+                ast_result.request = Some(build_request_text(target, param, &payload));
             }
             ast_result.response = Some(response_text.to_string());
             // Lightweight runtime verification (non-headless)
             let (verified, rt_resp, note) =
                 crate::scanning::light_verify::verify_dom_xss_light_with_client(
-                    client,
-                    target,
-                    param,
-                    &payload,
+                    client, target, param, &payload,
                 )
                 .await;
             if let Some(runtime_response) = rt_resp {
@@ -296,16 +286,14 @@ async fn run_ast_dom_analysis(
             if verified {
                 ast_result.result_type = FindingType::Verified;
                 ast_result.severity = "High".to_string();
-                ast_result.message_str =
-                    format!("{} [경량 확인: 검증됨]", ast_result.message_str);
+                ast_result.message_str = format!("{} [경량 확인: 검증됨]", ast_result.message_str);
             } else if self_bootstrap_verified {
                 ast_result.result_type = FindingType::Verified;
                 ast_result.severity = "High".to_string();
                 ast_result.message_str =
                     format!("{} [정적 self-bootstrap 확인]", ast_result.message_str);
             } else {
-                ast_result.message_str =
-                    format!("{} [경량 확인: 미검증]", ast_result.message_str);
+                ast_result.message_str = format!("{} [경량 확인: 미검증]", ast_result.message_str);
             }
             results.push(ast_result);
         }
@@ -487,8 +475,7 @@ pub async fn run_scanning(
 
     // === Stage 4: Payload Generation — build per-parameter payload sets ===
     let mut total_tasks = 0u64;
-    let mut param_jobs: Vec<ParamPayloadJob> =
-        Vec::with_capacity(target.reflection_params.len());
+    let mut param_jobs: Vec<ParamPayloadJob> = Vec::with_capacity(target.reflection_params.len());
     for param in &target.reflection_params {
         let mut reflection_payloads = if let Some(context) = &param.injection_context {
             crate::scanning::xss_common::get_dynamic_payloads(context, args.as_ref())
@@ -561,13 +548,13 @@ pub async fn run_scanning(
     // === Stage 5 & 6: Reflection Check + DOM Verification (per payload) ===
     for (param_clone, reflection_payloads, dom_payloads) in param_jobs {
         // Check cancellation before spawning next param task
-        if let Some(ref c) = cancel {
-            if c.load(Ordering::Relaxed) {
-                if let Some(ref pb) = pb {
-                    pb.finish_with_message(format!("Cancelled scanning {}", target.url));
-                }
-                break;
+        if let Some(ref c) = cancel
+            && c.load(Ordering::Relaxed)
+        {
+            if let Some(ref pb) = pb {
+                pb.finish_with_message(format!("Cancelled scanning {}", target.url));
             }
+            break;
         }
         let already_found = {
             let fp = found_params.read().await;
@@ -600,7 +587,10 @@ pub async fn run_scanning(
         let cancel_clone = cancel.clone();
 
         let handle = tokio::spawn(async move {
-            let _permit = semaphore_clone.acquire().await.expect("semaphore closed unexpectedly");
+            let _permit = semaphore_clone
+                .acquire()
+                .await
+                .expect("semaphore closed unexpectedly");
             // Batch local results to reduce mutex contention
             let mut local_results: Vec<crate::scanning::result::Result> = Vec::new();
             let mut local_ast_seen: HashSet<String> = HashSet::new();
@@ -696,10 +686,10 @@ pub async fn run_scanning(
             // Sequential testing for this param
             for reflection_payload in reflection_payloads {
                 // Check cancellation
-                if let Some(ref c) = cancel_clone {
-                    if c.load(Ordering::Relaxed) {
-                        break;
-                    }
+                if let Some(ref c) = cancel_clone
+                    && c.load(Ordering::Relaxed)
+                {
+                    break;
                 }
                 // Early stop if global limit reached
                 if let Some(lim) = args_clone.limit
@@ -711,7 +701,11 @@ pub async fn run_scanning(
                 let reflection_tuple = if reflection_found_locally {
                     (None, None)
                 } else {
-                    let already = found_params_clone.read().await.reflection.contains(&param_clone.name);
+                    let already = found_params_clone
+                        .read()
+                        .await
+                        .reflection
+                        .contains(&param_clone.name);
                     if already {
                         reflection_found_locally = true;
                         (None, None)
@@ -854,10 +848,10 @@ pub async fn run_scanning(
             // DOM verification
             for dom_payload in dom_payloads {
                 // Check cancellation
-                if let Some(ref c) = cancel_clone {
-                    if c.load(Ordering::Relaxed) {
-                        break;
-                    }
+                if let Some(ref c) = cancel_clone
+                    && c.load(Ordering::Relaxed)
+                {
+                    break;
                 }
                 // Early stop if global limit reached
                 if let Some(lim) = args_clone.limit
@@ -869,7 +863,11 @@ pub async fn run_scanning(
                 let already_dom_found = if dom_found_locally {
                     true
                 } else {
-                    let is_found = found_params_clone.read().await.dom.contains(&param_clone.name);
+                    let is_found = found_params_clone
+                        .read()
+                        .await
+                        .dom
+                        .contains(&param_clone.name);
                     if is_found {
                         dom_found_locally = true;
                     }
@@ -967,13 +965,16 @@ pub async fn run_scanning(
             }
             // HPP (HTTP Parameter Pollution) phase: test duplicate-param URLs
             // Only for query params when --hpp is enabled
-            if args_clone.hpp
-                && param_clone.location == crate::parameter_analysis::Location::Query
+            if args_clone.hpp && param_clone.location == crate::parameter_analysis::Location::Query
             {
                 use crate::scanning::url_inject::{HppPosition, build_hpp_url};
 
                 // Use a small subset of reflection payloads to avoid request explosion
-                let hpp_payloads: Vec<String> = reflection_payloads_for_hpp.iter().take(5).cloned().collect();
+                let hpp_payloads: Vec<String> = reflection_payloads_for_hpp
+                    .iter()
+                    .take(5)
+                    .cloned()
+                    .collect();
                 let hpp_positions = [HppPosition::Last, HppPosition::First, HppPosition::Both];
 
                 'hpp_outer: for hpp_payload in &hpp_payloads {
@@ -983,12 +984,9 @@ pub async fn run_scanning(
                         break;
                     }
                     for &position in &hpp_positions {
-                        if let Some(hpp_url) = build_hpp_url(
-                            &target_clone.url,
-                            &param_clone,
-                            hpp_payload,
-                            position,
-                        ) {
+                        if let Some(hpp_url) =
+                            build_hpp_url(&target_clone.url, &param_clone, hpp_payload, position)
+                        {
                             let (kind, response_text) =
                                 crate::scanning::check_reflection::check_reflection_with_hpp_url(
                                     client,
@@ -1058,8 +1056,7 @@ pub async fn run_scanning(
         if total_waf_blocks > 0 {
             eprintln!(
                 "[*] WAF block stats: {} total blocks detected during scan of {}",
-                total_waf_blocks,
-                target.url,
+                total_waf_blocks, target.url,
             );
         }
     }
@@ -1119,9 +1116,17 @@ mod tests {
 
     fn make_result(ft: FindingType) -> crate::scanning::result::Result {
         crate::scanning::result::Result::new(
-            ft, String::new(), String::new(), String::new(),
-            String::new(), String::new(), String::new(),
-            String::new(), String::new(), 0, String::new(),
+            ft,
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            0,
+            String::new(),
         )
     }
 
@@ -1205,7 +1210,11 @@ mod tests {
             make_typed_param_result(FindingType::Reflected, "other", "inHTML"),
         ];
         let after = collapse_redundant_reflected(results);
-        assert_eq!(after.len(), 3, "different inject_type or param must be kept");
+        assert_eq!(
+            after.len(),
+            3,
+            "different inject_type or param must be kept"
+        );
     }
 
     #[test]
@@ -1217,7 +1226,11 @@ mod tests {
         ];
         let after = collapse_redundant_reflected(results);
         assert_eq!(after.len(), 2);
-        assert!(after.iter().any(|r| r.result_type == FindingType::AstDetected));
+        assert!(
+            after
+                .iter()
+                .any(|r| r.result_type == FindingType::AstDetected)
+        );
     }
 
     // Mock function for XSS scanning tests (similar to parameter analysis mocks)
@@ -1229,9 +1242,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         });
     }
 
@@ -1314,9 +1327,9 @@ mod tests {
             injection_context: Some(InjectionContext::Javascript(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let args = default_scan_args();
         let payloads = get_dom_payloads(&param, &args).expect("dom payload generation");
@@ -1339,9 +1352,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let args = default_scan_args();
         let payloads = get_dom_payloads(&param, &args).expect("dom payload generation");
@@ -1360,9 +1373,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
         let mut args = default_scan_args();
         args.only_custom_payload = true;
@@ -1387,7 +1400,10 @@ mod tests {
         assert!(payloads.iter().any(|p| p.contains("onerror=")));
         assert!(payloads.iter().any(|p| p.contains("<IMG")));
         // Should have encoded variants
-        assert!(payloads.len() > 100, "should have many payloads with encoder variants");
+        assert!(
+            payloads.len() > 100,
+            "should have many payloads with encoder variants"
+        );
     }
 
     #[test]
@@ -1421,9 +1437,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
 
         let request = build_request_text(&target, &param, "PAYLOAD");
@@ -1445,9 +1461,9 @@ mod tests {
             injection_context: None,
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         };
 
         let request = build_request_text(&target, &param, "hello world");
@@ -1648,9 +1664,9 @@ mod tests {
             injection_context: Some(InjectionContext::Html(None)),
             valid_specials: None,
             invalid_specials: None,
-                    pre_encoding: None,
-                    form_action_url: None,
-                    form_origin_url: None,
+            pre_encoding: None,
+            form_action_url: None,
+            form_origin_url: None,
         });
 
         let args = crate::cmd::scan::ScanArgs {

@@ -15,7 +15,10 @@ pub fn extract_javascript_from_html(html: &str) -> Vec<String> {
     {
         let selector = selectors::script();
         for element in document.select(selector) {
-            let text = element.text().fold(String::new(), |mut acc, t| { acc.push_str(t); acc });
+            let text = element.text().fold(String::new(), |mut acc, t| {
+                acc.push_str(t);
+                acc
+            });
             if !text.trim().is_empty() && seen.insert(text.trim().to_string()) {
                 js_code.push(text);
             }
@@ -141,7 +144,12 @@ pub fn has_self_bootstrap_for_source_in_html(html: &str, source: &str) -> bool {
 
 /// Replace or optionally insert a query parameter in a URL.
 /// When `insert_if_missing` is false, returns the original URL unchanged if the key is not found.
-fn modify_query_param(mut url: url::Url, key: &str, value: &str, insert_if_missing: bool) -> String {
+fn modify_query_param(
+    mut url: url::Url,
+    key: &str,
+    value: &str,
+    insert_if_missing: bool,
+) -> String {
     let mut replaced = false;
     let mut pairs: Vec<(String, String)> = url
         .query_pairs()

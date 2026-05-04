@@ -91,20 +91,47 @@ struct BodyDetectRule {
 }
 
 /// Detect technologies from response headers and body.
-pub fn detect_technologies(
-    headers: &HeaderMap,
-    body: Option<&str>,
-) -> TechDetectionResult {
+pub fn detect_technologies(headers: &HeaderMap, body: Option<&str>) -> TechDetectionResult {
     let mut result = TechDetectionResult::default();
 
     // Header-based detection
     let header_rules = [
-        HeaderDetectRule { header: "x-powered-by", value_contains: Some("asp.net"), tech: TechType::ASPNet, evidence: "X-Powered-By: ASP.NET" },
-        HeaderDetectRule { header: "x-powered-by", value_contains: Some("php"), tech: TechType::PHP, evidence: "X-Powered-By: PHP" },
-        HeaderDetectRule { header: "x-powered-by", value_contains: Some("express"), tech: TechType::Express, evidence: "X-Powered-By: Express" },
-        HeaderDetectRule { header: "x-powered-by", value_contains: Some("next.js"), tech: TechType::NextJs, evidence: "X-Powered-By: Next.js" },
-        HeaderDetectRule { header: "x-generator", value_contains: Some("wordpress"), tech: TechType::WordPress, evidence: "X-Generator: WordPress" },
-        HeaderDetectRule { header: "link", value_contains: Some("wp-json"), tech: TechType::WordPress, evidence: "Link: wp-json (WordPress REST API)" },
+        HeaderDetectRule {
+            header: "x-powered-by",
+            value_contains: Some("asp.net"),
+            tech: TechType::ASPNet,
+            evidence: "X-Powered-By: ASP.NET",
+        },
+        HeaderDetectRule {
+            header: "x-powered-by",
+            value_contains: Some("php"),
+            tech: TechType::PHP,
+            evidence: "X-Powered-By: PHP",
+        },
+        HeaderDetectRule {
+            header: "x-powered-by",
+            value_contains: Some("express"),
+            tech: TechType::Express,
+            evidence: "X-Powered-By: Express",
+        },
+        HeaderDetectRule {
+            header: "x-powered-by",
+            value_contains: Some("next.js"),
+            tech: TechType::NextJs,
+            evidence: "X-Powered-By: Next.js",
+        },
+        HeaderDetectRule {
+            header: "x-generator",
+            value_contains: Some("wordpress"),
+            tech: TechType::WordPress,
+            evidence: "X-Generator: WordPress",
+        },
+        HeaderDetectRule {
+            header: "link",
+            value_contains: Some("wp-json"),
+            tech: TechType::WordPress,
+            evidence: "Link: wp-json (WordPress REST API)",
+        },
     ];
 
     for rule in &header_rules {
@@ -118,10 +145,13 @@ pub fn detect_technologies(
                     .unwrap_or(false),
             };
             if matched {
-                merge_detection(&mut result, TechDetection {
-                    tech: rule.tech.clone(),
-                    evidence: rule.evidence.to_string(),
-                });
+                merge_detection(
+                    &mut result,
+                    TechDetection {
+                        tech: rule.tech.clone(),
+                        evidence: rule.evidence.to_string(),
+                    },
+                );
             }
         }
     }
@@ -132,60 +162,203 @@ pub fn detect_technologies(
 
         let body_rules = [
             // Angular
-            BodyDetectRule { pattern: "ng-app", tech: TechType::Angular, evidence: "ng-app attribute" },
-            BodyDetectRule { pattern: "ng-controller", tech: TechType::Angular, evidence: "ng-controller attribute" },
-            BodyDetectRule { pattern: "ng-model", tech: TechType::Angular, evidence: "ng-model attribute" },
-            BodyDetectRule { pattern: "angular.min.js", tech: TechType::Angular, evidence: "angular.min.js script" },
-            BodyDetectRule { pattern: "angular.js", tech: TechType::Angular, evidence: "angular.js script" },
-            BodyDetectRule { pattern: "ng-version", tech: TechType::Angular, evidence: "ng-version attribute" },
+            BodyDetectRule {
+                pattern: "ng-app",
+                tech: TechType::Angular,
+                evidence: "ng-app attribute",
+            },
+            BodyDetectRule {
+                pattern: "ng-controller",
+                tech: TechType::Angular,
+                evidence: "ng-controller attribute",
+            },
+            BodyDetectRule {
+                pattern: "ng-model",
+                tech: TechType::Angular,
+                evidence: "ng-model attribute",
+            },
+            BodyDetectRule {
+                pattern: "angular.min.js",
+                tech: TechType::Angular,
+                evidence: "angular.min.js script",
+            },
+            BodyDetectRule {
+                pattern: "angular.js",
+                tech: TechType::Angular,
+                evidence: "angular.js script",
+            },
+            BodyDetectRule {
+                pattern: "ng-version",
+                tech: TechType::Angular,
+                evidence: "ng-version attribute",
+            },
             // React
-            BodyDetectRule { pattern: "data-reactroot", tech: TechType::React, evidence: "data-reactroot attribute" },
-            BodyDetectRule { pattern: "data-reactid", tech: TechType::React, evidence: "data-reactid attribute" },
-            BodyDetectRule { pattern: "__next_data__", tech: TechType::React, evidence: "__NEXT_DATA__ (Next.js/React)" },
-            BodyDetectRule { pattern: "react.production.min.js", tech: TechType::React, evidence: "react.production.min.js" },
-            BodyDetectRule { pattern: "react-dom", tech: TechType::React, evidence: "react-dom script reference" },
+            BodyDetectRule {
+                pattern: "data-reactroot",
+                tech: TechType::React,
+                evidence: "data-reactroot attribute",
+            },
+            BodyDetectRule {
+                pattern: "data-reactid",
+                tech: TechType::React,
+                evidence: "data-reactid attribute",
+            },
+            BodyDetectRule {
+                pattern: "__next_data__",
+                tech: TechType::React,
+                evidence: "__NEXT_DATA__ (Next.js/React)",
+            },
+            BodyDetectRule {
+                pattern: "react.production.min.js",
+                tech: TechType::React,
+                evidence: "react.production.min.js",
+            },
+            BodyDetectRule {
+                pattern: "react-dom",
+                tech: TechType::React,
+                evidence: "react-dom script reference",
+            },
             // Vue.js
-            BodyDetectRule { pattern: "v-app", tech: TechType::Vue, evidence: "v-app attribute" },
-            BodyDetectRule { pattern: "data-v-", tech: TechType::Vue, evidence: "data-v- scoped style attribute" },
-            BodyDetectRule { pattern: "vue.min.js", tech: TechType::Vue, evidence: "vue.min.js script" },
-            BodyDetectRule { pattern: "vue.js", tech: TechType::Vue, evidence: "vue.js script" },
-            BodyDetectRule { pattern: "vue.global", tech: TechType::Vue, evidence: "vue.global script" },
+            BodyDetectRule {
+                pattern: "v-app",
+                tech: TechType::Vue,
+                evidence: "v-app attribute",
+            },
+            BodyDetectRule {
+                pattern: "data-v-",
+                tech: TechType::Vue,
+                evidence: "data-v- scoped style attribute",
+            },
+            BodyDetectRule {
+                pattern: "vue.min.js",
+                tech: TechType::Vue,
+                evidence: "vue.min.js script",
+            },
+            BodyDetectRule {
+                pattern: "vue.js",
+                tech: TechType::Vue,
+                evidence: "vue.js script",
+            },
+            BodyDetectRule {
+                pattern: "vue.global",
+                tech: TechType::Vue,
+                evidence: "vue.global script",
+            },
             // jQuery
-            BodyDetectRule { pattern: "jquery.min.js", tech: TechType::JQuery, evidence: "jquery.min.js script" },
-            BodyDetectRule { pattern: "jquery.js", tech: TechType::JQuery, evidence: "jquery.js script" },
-            BodyDetectRule { pattern: "jquery/", tech: TechType::JQuery, evidence: "jQuery CDN path" },
+            BodyDetectRule {
+                pattern: "jquery.min.js",
+                tech: TechType::JQuery,
+                evidence: "jquery.min.js script",
+            },
+            BodyDetectRule {
+                pattern: "jquery.js",
+                tech: TechType::JQuery,
+                evidence: "jquery.js script",
+            },
+            BodyDetectRule {
+                pattern: "jquery/",
+                tech: TechType::JQuery,
+                evidence: "jQuery CDN path",
+            },
             // Handlebars
-            BodyDetectRule { pattern: "handlebars.min.js", tech: TechType::Handlebars, evidence: "handlebars.min.js" },
-            BodyDetectRule { pattern: "handlebars.js", tech: TechType::Handlebars, evidence: "handlebars.js" },
+            BodyDetectRule {
+                pattern: "handlebars.min.js",
+                tech: TechType::Handlebars,
+                evidence: "handlebars.min.js",
+            },
+            BodyDetectRule {
+                pattern: "handlebars.js",
+                tech: TechType::Handlebars,
+                evidence: "handlebars.js",
+            },
             // Svelte
-            BodyDetectRule { pattern: "svelte", tech: TechType::Svelte, evidence: "Svelte reference in body" },
+            BodyDetectRule {
+                pattern: "svelte",
+                tech: TechType::Svelte,
+                evidence: "Svelte reference in body",
+            },
             // Ember
-            BodyDetectRule { pattern: "ember.min.js", tech: TechType::Ember, evidence: "ember.min.js" },
-            BodyDetectRule { pattern: "ember.js", tech: TechType::Ember, evidence: "ember.js" },
-            BodyDetectRule { pattern: "data-ember", tech: TechType::Ember, evidence: "data-ember attribute" },
+            BodyDetectRule {
+                pattern: "ember.min.js",
+                tech: TechType::Ember,
+                evidence: "ember.min.js",
+            },
+            BodyDetectRule {
+                pattern: "ember.js",
+                tech: TechType::Ember,
+                evidence: "ember.js",
+            },
+            BodyDetectRule {
+                pattern: "data-ember",
+                tech: TechType::Ember,
+                evidence: "data-ember attribute",
+            },
             // Backbone
-            BodyDetectRule { pattern: "backbone.min.js", tech: TechType::Backbone, evidence: "backbone.min.js" },
-            BodyDetectRule { pattern: "backbone.js", tech: TechType::Backbone, evidence: "backbone.js" },
+            BodyDetectRule {
+                pattern: "backbone.min.js",
+                tech: TechType::Backbone,
+                evidence: "backbone.min.js",
+            },
+            BodyDetectRule {
+                pattern: "backbone.js",
+                tech: TechType::Backbone,
+                evidence: "backbone.js",
+            },
             // Knockout
-            BodyDetectRule { pattern: "knockout.min.js", tech: TechType::Knockout, evidence: "knockout.min.js" },
-            BodyDetectRule { pattern: "ko.observable", tech: TechType::Knockout, evidence: "ko.observable (Knockout)" },
-            BodyDetectRule { pattern: "data-bind=", tech: TechType::Knockout, evidence: "data-bind attribute (Knockout)" },
+            BodyDetectRule {
+                pattern: "knockout.min.js",
+                tech: TechType::Knockout,
+                evidence: "knockout.min.js",
+            },
+            BodyDetectRule {
+                pattern: "ko.observable",
+                tech: TechType::Knockout,
+                evidence: "ko.observable (Knockout)",
+            },
+            BodyDetectRule {
+                pattern: "data-bind=",
+                tech: TechType::Knockout,
+                evidence: "data-bind attribute (Knockout)",
+            },
             // WordPress
-            BodyDetectRule { pattern: "wp-content/", tech: TechType::WordPress, evidence: "wp-content/ path" },
-            BodyDetectRule { pattern: "wp-includes/", tech: TechType::WordPress, evidence: "wp-includes/ path" },
+            BodyDetectRule {
+                pattern: "wp-content/",
+                tech: TechType::WordPress,
+                evidence: "wp-content/ path",
+            },
+            BodyDetectRule {
+                pattern: "wp-includes/",
+                tech: TechType::WordPress,
+                evidence: "wp-includes/ path",
+            },
             // Nuxt
-            BodyDetectRule { pattern: "__nuxt", tech: TechType::Nuxt, evidence: "__NUXT reference" },
-            BodyDetectRule { pattern: "nuxt.js", tech: TechType::Nuxt, evidence: "nuxt.js script" },
+            BodyDetectRule {
+                pattern: "__nuxt",
+                tech: TechType::Nuxt,
+                evidence: "__NUXT reference",
+            },
+            BodyDetectRule {
+                pattern: "nuxt.js",
+                tech: TechType::Nuxt,
+                evidence: "nuxt.js script",
+            },
             // Next.js (body)
-            BodyDetectRule { pattern: "_next/static", tech: TechType::NextJs, evidence: "_next/static path" },
+            BodyDetectRule {
+                pattern: "_next/static",
+                tech: TechType::NextJs,
+                evidence: "_next/static path",
+            },
         ];
 
         for rule in &body_rules {
             if body_lower.contains(rule.pattern) {
-                merge_detection(&mut result, TechDetection {
-                    tech: rule.tech.clone(),
-                    evidence: rule.evidence.to_string(),
-                });
+                merge_detection(
+                    &mut result,
+                    TechDetection {
+                        tech: rule.tech.clone(),
+                        evidence: rule.evidence.to_string(),
+                    },
+                );
             }
         }
     }
@@ -283,9 +456,14 @@ pub fn get_tech_specific_payloads(techs: &TechDetectionResult) -> Vec<String> {
                 ));
             }
             // Server-side techs: no specific client-side payloads needed
-            TechType::React | TechType::Svelte | TechType::Backbone
-            | TechType::ASPNet | TechType::PHP | TechType::Express
-            | TechType::NextJs | TechType::Nuxt => {}
+            TechType::React
+            | TechType::Svelte
+            | TechType::Backbone
+            | TechType::ASPNet
+            | TechType::PHP
+            | TechType::Express
+            | TechType::NextJs
+            | TechType::Nuxt => {}
         }
     }
 

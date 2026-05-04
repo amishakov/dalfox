@@ -34,7 +34,8 @@ pub fn form() -> &'static Selector {
 pub fn input_textarea_select() -> &'static Selector {
     static SEL: OnceLock<Selector> = OnceLock::new();
     SEL.get_or_init(|| {
-        Selector::parse("input, textarea, select").expect("valid CSS input/textarea/select selector")
+        Selector::parse("input, textarea, select")
+            .expect("valid CSS input/textarea/select selector")
     })
 }
 

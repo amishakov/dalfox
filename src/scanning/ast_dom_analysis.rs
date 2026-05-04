@@ -92,40 +92,90 @@ struct DomXssVisitor<'a> {
 
 // Module-level DOM source/sink/sanitizer constants
 const DOM_SOURCES: &[&str] = &[
-    "location.search", "location.hash", "location.href", "location.pathname",
-    "document.URL", "document.documentURI", "document.URLUnencoded",
-    "document.baseURI", "document.cookie", "document.referrer",
-    "window.name", "window.location",
-    "localStorage", "sessionStorage",
-    "localStorage.getItem", "sessionStorage.getItem",
-    "event.data", "e.data", "event.newValue", "e.newValue",
-    "event.oldValue", "e.oldValue",
-    "e.target.value", "event.target.value",
+    "location.search",
+    "location.hash",
+    "location.href",
+    "location.pathname",
+    "document.URL",
+    "document.documentURI",
+    "document.URLUnencoded",
+    "document.baseURI",
+    "document.cookie",
+    "document.referrer",
+    "window.name",
+    "window.location",
+    "localStorage",
+    "sessionStorage",
+    "localStorage.getItem",
+    "sessionStorage.getItem",
+    "event.data",
+    "e.data",
+    "event.newValue",
+    "e.newValue",
+    "event.oldValue",
+    "e.oldValue",
+    "e.target.value",
+    "event.target.value",
     "window.opener",
-    "URLSearchParams", "import.meta.url", "location.origin", "location.host",
-    "history.state", "document.domain",
-    "Response.text", "Response.json",
-    "XMLHttpRequest.responseText", "XMLHttpRequest.response",
+    "URLSearchParams",
+    "import.meta.url",
+    "location.origin",
+    "location.host",
+    "history.state",
+    "document.domain",
+    "Response.text",
+    "Response.json",
+    "XMLHttpRequest.responseText",
+    "XMLHttpRequest.response",
 ];
 
 const DOM_SINKS: &[&str] = &[
-    "innerHTML", "outerHTML", "insertAdjacentHTML", "createContextualFragment",
-    "document.write", "document.writeln",
-    "eval", "setTimeout", "setInterval", "Function", "execScript",
-    "location.href", "location.assign", "location.replace",
-    "src", "srcdoc", "href", "xlink:href", "setAttribute",
-    "html", "append", "prepend", "after", "before",
+    "innerHTML",
+    "outerHTML",
+    "insertAdjacentHTML",
+    "createContextualFragment",
+    "document.write",
+    "document.writeln",
+    "eval",
+    "setTimeout",
+    "setInterval",
+    "Function",
+    "execScript",
+    "location.href",
+    "location.assign",
+    "location.replace",
+    "src",
+    "srcdoc",
+    "href",
+    "xlink:href",
+    "setAttribute",
+    "html",
+    "append",
+    "prepend",
+    "after",
+    "before",
     "execCommand",
 ];
 
 const DOM_SANITIZERS: &[&str] = &[
-    "DOMPurify.sanitize", "encodeURIComponent", "encodeURI",
-    "encodeHTML", "escapeHTML",
-    "document.createTextNode", "createTextNode",
-    "sanitizeHtml", "xss", "filterXSS",
-    "he.encode", "he.escape", "_.escape",
-    "escapeHtml", "htmlEscape", "htmlEncode",
-    "sanitizeHTML", "validator.escape",
+    "DOMPurify.sanitize",
+    "encodeURIComponent",
+    "encodeURI",
+    "encodeHTML",
+    "escapeHTML",
+    "document.createTextNode",
+    "createTextNode",
+    "sanitizeHtml",
+    "xss",
+    "filterXSS",
+    "he.encode",
+    "he.escape",
+    "_.escape",
+    "escapeHtml",
+    "htmlEscape",
+    "htmlEncode",
+    "sanitizeHTML",
+    "validator.escape",
 ];
 
 static STATIC_SOURCES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
@@ -470,12 +520,15 @@ impl<'a> DomXssVisitor<'a> {
     fn eval_static_string_expr(&self, expr: &Expression<'a>) -> Option<String> {
         match expr {
             Expression::StringLiteral(s) => Some(s.value.to_string()),
-            Expression::TemplateLiteral(t) if t.expressions.is_empty() => Some(
-                t.quasis
-                    .iter()
-                    .filter_map(|q| q.value.cooked)
-                    .fold(String::new(), |mut acc, a| { acc.push_str(a.as_str()); acc }),
-            ),
+            Expression::TemplateLiteral(t) if t.expressions.is_empty() => {
+                Some(t.quasis.iter().filter_map(|q| q.value.cooked).fold(
+                    String::new(),
+                    |mut acc, a| {
+                        acc.push_str(a.as_str());
+                        acc
+                    },
+                ))
+            }
             Expression::BinaryExpression(binary) if binary.operator == BinaryOperator::Addition => {
                 let left = self.eval_static_string_expr(&binary.left)?;
                 let right = self.eval_static_string_expr(&binary.right)?;
@@ -864,7 +917,8 @@ impl<'a> DomXssVisitor<'a> {
     fn call_taint_and_source(&self, call: &CallExpression<'a>) -> (bool, Option<String>) {
         // Sanitizers produce de-tainted values
         if let Some(func_name) = self.get_expr_string(&call.callee)
-            && (self.sanitizers.contains(func_name.as_str()) || Self::is_likely_sanitizer_name(&func_name))
+            && (self.sanitizers.contains(func_name.as_str())
+                || Self::is_likely_sanitizer_name(&func_name))
         {
             return (false, None);
         }
@@ -2000,10 +2054,8 @@ impl<'a> DomXssVisitor<'a> {
                 format!("{param_name}.target.value"),
                 "e.target.value".to_string(),
             );
-            self.field_taints.insert(
-                format!("{param_name}.target"),
-                "e.target.value".to_string(),
-            );
+            self.field_taints
+                .insert(format!("{param_name}.target"), "e.target.value".to_string());
         }
 
         self.walk_statements(statements);

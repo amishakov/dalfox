@@ -89,8 +89,13 @@ fn script_blocks(html: &str) -> impl Iterator<Item = &str> {
 /// hitting many distinct `<script>` blocks.
 const SINK_CACHE_CAPACITY: usize = 1024;
 
-fn sink_cache() -> &'static Mutex<HashMap<u64, Option<Vec<(u32, u32)>>>> {
-    static CACHE: OnceLock<Mutex<HashMap<u64, Option<Vec<(u32, u32)>>>>> = OnceLock::new();
+/// Sink-call spans for a parsed `<script>` body, or `None` when the body
+/// failed to parse (and is therefore treated as inert).
+type SinkSpans = Option<Vec<(u32, u32)>>;
+type SinkCache = Mutex<HashMap<u64, SinkSpans>>;
+
+fn sink_cache() -> &'static SinkCache {
+    static CACHE: OnceLock<SinkCache> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -224,10 +229,10 @@ fn callee_identifier_is_sink(callee: &Expression<'_>) -> bool {
         }
         Expression::ComputedMemberExpression(member) => {
             // foo["alert"](1) — string-keyed dynamic dispatch
-            if let Expression::StringLiteral(lit) = &member.expression {
-                if JS_SINK_NAMES.contains(&lit.value.as_str()) {
-                    return true;
-                }
+            if let Expression::StringLiteral(lit) = &member.expression
+                && JS_SINK_NAMES.contains(&lit.value.as_str())
+            {
+                return true;
             }
             // [alert][0](1) — array-then-index bypass: object is an
             // ArrayExpression whose first element is a sink identifier and
@@ -511,12 +516,12 @@ pub(crate) fn has_js_context_evidence(payload: &str, html: &str) -> bool {
             return true;
         }
     }
-    if !saw_block && html.len() <= JSONP_PARSE_MAX_BYTES {
-        if let Some((ps, pe)) = locate_payload(html, payload)
-            && script_block_has_sink_call_in_range(html, ps, pe)
-        {
-            return true;
-        }
+    if !saw_block
+        && html.len() <= JSONP_PARSE_MAX_BYTES
+        && let Some((ps, pe)) = locate_payload(html, payload)
+        && script_block_has_sink_call_in_range(html, ps, pe)
+    {
+        return true;
     }
     false
 }
@@ -582,10 +587,7 @@ mod tests {
     #[test]
     fn ignores_pre_existing_alert_outside_payload_range() {
         let payload = "\"-foo-\"";
-        let html = format!(
-            "<script>alert(1); var x = \"{}\";</script>",
-            payload
-        );
+        let html = format!("<script>alert(1); var x = \"{}\";</script>", payload);
         // `alert(1)` exists but it's not inside the payload's byte range.
         assert!(!has_js_context_evidence(payload, &html));
     }

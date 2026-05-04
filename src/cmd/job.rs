@@ -211,8 +211,14 @@ mod tests {
 
         purge_expired_jobs(&mut jobs, JOB_RETENTION_SECS);
 
-        assert!(!jobs.contains_key("old"), "old terminal job should be purged");
+        assert!(
+            !jobs.contains_key("old"),
+            "old terminal job should be purged"
+        );
         assert!(jobs.contains_key("fresh"), "fresh terminal job must remain");
-        assert!(jobs.contains_key("active"), "active job must never be purged");
+        assert!(
+            jobs.contains_key("active"),
+            "active job must never be purged"
+        );
     }
 }

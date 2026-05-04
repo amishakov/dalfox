@@ -77,10 +77,7 @@ async fn send_blind_request(target: &Target, param_name: &str, payload: &str, pa
         _ => target.url.clone(),
     };
 
-    let mut request = client.request(
-        target.parse_method(),
-        url.clone(),
-    );
+    let mut request = client.request(target.parse_method(), url.clone());
 
     let mut headers = target.headers.clone();
     let mut cookies = target.cookies.clone();

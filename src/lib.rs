@@ -75,7 +75,8 @@ pub use std::sync::atomic::AtomicU64;
 pub static DEBUG: AtomicBool = AtomicBool::new(false);
 pub static REQUEST_COUNT: AtomicU64 = AtomicU64::new(0);
 pub static WAF_BLOCK_COUNT: AtomicU64 = AtomicU64::new(0);
-pub static WAF_CONSECUTIVE_BLOCKS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+pub static WAF_CONSECUTIVE_BLOCKS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
 pub static NO_COLOR: AtomicBool = AtomicBool::new(false);
 
 tokio::task_local! {
@@ -99,8 +100,7 @@ tokio::task_local! {
 #[inline]
 pub fn tick_request_count() {
     REQUEST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let _ = REQUEST_COUNT_JOB
-        .try_with(|c| c.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    let _ = REQUEST_COUNT_JOB.try_with(|c| c.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
 }
 
 /// Record a WAF-block response (403/406/429/503 on an injection request).
@@ -117,9 +117,7 @@ pub fn tick_waf_block() -> u32 {
         .try_with(|c| c.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1)
     {
         Ok(v) => v,
-        Err(_) => {
-            WAF_CONSECUTIVE_BLOCKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
-        }
+        Err(_) => WAF_CONSECUTIVE_BLOCKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
     }
 }
 
