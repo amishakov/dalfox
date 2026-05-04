@@ -1,0 +1,1292 @@
+use super::*;
+use axum::{
+    Router, body,
+    extract::{Path, Query, State},
+    http::{HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
+    routing::any,
+};
+use std::collections::HashMap as Map;
+use std::net::Ipv4Addr;
+use std::path::PathBuf;
+
+fn make_state(
+    api_key: Option<&str>,
+    origins: Option<Vec<&str>>,
+    allow_all: bool,
+    jsonp: bool,
+    cb_name: &str,
+) -> AppState {
+    AppState {
+        api_key: api_key.map(|s| s.to_string()),
+        jobs: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        log_file: None,
+        allowed_origins: origins.map(|v| v.into_iter().map(|s| s.to_string()).collect()),
+        allowed_origin_regexes: vec![],
+        allow_all_origins: allow_all,
+        allow_methods: "GET,POST,OPTIONS,PUT,PATCH,DELETE".to_string(),
+        allow_headers: "Content-Type,X-API-KEY,Authorization".to_string(),
+        jsonp_enabled: jsonp,
+        callback_param_name: cb_name.to_string(),
+    }
+}
+
+/// Build a synthetic Job for tests. Non-terminal jobs get no finished_at;
+/// terminal jobs get `now_ms()` so retention tests can bracket around them.
+fn test_job(status: JobStatus, results: Option<Vec<SanitizedResult>>, target_url: &str) -> Job {
+    let mut job = Job::new_queued(target_url.to_string());
+    job.status = status.clone();
+    job.results = results.map(Arc::new);
+    if matches!(
+        status,
+        JobStatus::Done | JobStatus::Error | JobStatus::Cancelled
+    ) {
+        job.finished_at_ms = Some(now_ms());
+    }
+    job
+}
+
+fn temp_log_path(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "dalfox-server-{}-{}.log",
+        name,
+        crate::utils::make_scan_id(name)
+    ))
+}
+
+async fn response_body_string(resp: axum::response::Response) -> String {
+    let bytes = body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .expect("response bytes");
+    String::from_utf8(bytes.to_vec()).expect("utf8 response")
+}
+
+async fn target_ok_handler() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [("content-type", "text/html; charset=utf-8")],
+        "<html><body>ok</body></html>",
+    )
+}
+
+async fn start_target_server() -> SocketAddr {
+    let app = Router::new()
+        .route("/", any(target_ok_handler))
+        .route("/{*rest}", any(target_ok_handler));
+    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind target listener");
+    let addr = listener.local_addr().expect("target local addr");
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    addr
+}
+
+#[test]
+fn test_check_api_key_variants() {
+    let state_no_key = make_state(None, None, false, false, "callback");
+    let headers = HeaderMap::new();
+    assert!(check_api_key(&state_no_key, &headers));
+
+    let state_with_key = make_state(Some("secret"), None, false, false, "callback");
+    assert!(!check_api_key(&state_with_key, &headers));
+
+    let mut ok_headers = HeaderMap::new();
+    ok_headers.insert("X-API-KEY", HeaderValue::from_static("secret"));
+    assert!(check_api_key(&state_with_key, &ok_headers));
+
+    let mut bad_headers = HeaderMap::new();
+    bad_headers.insert("X-API-KEY", HeaderValue::from_static("wrong"));
+    assert!(!check_api_key(&state_with_key, &bad_headers));
+}
+
+#[test]
+fn test_make_and_short_scan_id_shape() {
+    let id = make_scan_id("https://example.com");
+    assert_eq!(id.len(), 64);
+    assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+    assert_eq!(crate::utils::short_scan_id(&id).len(), 7);
+    assert_eq!(crate::utils::short_scan_id("abc"), "abc");
+}
+
+#[test]
+fn test_validate_jsonp_callback_accepts_and_rejects() {
+    assert_eq!(
+        validate_jsonp_callback(" cb.func_1 "),
+        Some("cb.func_1".to_string())
+    );
+    assert_eq!(validate_jsonp_callback("$name"), Some("$name".to_string()));
+    assert!(validate_jsonp_callback("").is_none());
+    assert!(validate_jsonp_callback("1abc").is_none());
+    assert!(validate_jsonp_callback("a-b").is_none());
+    assert!(validate_jsonp_callback(&"a".repeat(65)).is_none());
+}
+
+#[test]
+fn test_build_cors_headers_none_all_exact_regex_and_fallbacks() {
+    let req_headers = HeaderMap::new();
+    let state_none = make_state(None, None, false, false, "callback");
+    let none_headers = build_cors_headers(&state_none, &req_headers);
+    assert!(none_headers.is_empty());
+
+    let state_all = make_state(None, Some(vec!["*"]), true, false, "callback");
+    let all_headers = build_cors_headers(&state_all, &req_headers);
+    assert_eq!(
+        all_headers
+            .get("Access-Control-Allow-Origin")
+            .and_then(|v| v.to_str().ok()),
+        Some("*")
+    );
+
+    let state_exact = make_state(
+        None,
+        Some(vec!["http://localhost:3000"]),
+        false,
+        false,
+        "callback",
+    );
+    let mut exact_req_headers = HeaderMap::new();
+    exact_req_headers.insert("Origin", HeaderValue::from_static("http://localhost:3000"));
+    let exact_headers = build_cors_headers(&state_exact, &exact_req_headers);
+    assert_eq!(
+        exact_headers
+            .get("Access-Control-Allow-Origin")
+            .and_then(|v| v.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        exact_headers.get("Vary").and_then(|v| v.to_str().ok()),
+        Some("Origin")
+    );
+
+    let mut state_regex = make_state(None, Some(vec!["http://dummy"]), false, false, "callback");
+    state_regex.allowed_origin_regexes =
+        vec![regex::Regex::new(r"^https://.*\.example\.com$").expect("valid regex")];
+    let mut regex_req_headers = HeaderMap::new();
+    regex_req_headers.insert(
+        "Origin",
+        HeaderValue::from_static("https://api.example.com"),
+    );
+    let regex_headers = build_cors_headers(&state_regex, &regex_req_headers);
+    assert_eq!(
+        regex_headers
+            .get("Access-Control-Allow-Origin")
+            .and_then(|v| v.to_str().ok()),
+        Some("https://api.example.com")
+    );
+
+    let mut state_fallback = make_state(None, Some(vec!["http://x"]), false, false, "callback");
+    state_fallback.allow_methods = "\n".to_string();
+    state_fallback.allow_headers = "\n".to_string();
+    let fallback_headers = build_cors_headers(&state_fallback, &HeaderMap::new());
+    assert!(
+        fallback_headers
+            .get("Access-Control-Allow-Methods")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.contains("GET"))
+            .unwrap_or(false)
+    );
+    assert!(
+        fallback_headers
+            .get("Access-Control-Allow-Headers")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.contains("Content-Type"))
+            .unwrap_or(false)
+    );
+}
+
+#[test]
+fn test_log_writes_to_file_and_supports_unknown_level() {
+    let mut state = make_state(None, None, false, false, "callback");
+    let path = temp_log_path("log-test");
+    let _ = std::fs::remove_file(&path);
+    state.log_file = Some(path.to_string_lossy().to_string());
+
+    log(&state, "CUSTOM", "hello-log");
+    let content = std::fs::read_to_string(&path).expect("log file should be readable");
+    assert!(content.contains("[CUSTOM] hello-log"));
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn test_run_scan_job_invalid_target_sets_error() {
+    let state = make_state(None, None, false, false, "callback");
+    let id = "scan-job-error".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(id.clone(), test_job(JobStatus::Queued, None, ""));
+    }
+
+    run_scan_job(
+        state.clone(),
+        id.clone(),
+        "not a valid target".to_string(),
+        ScanOptions::default(),
+        false,
+        false,
+    )
+    .await;
+
+    let jobs = state.jobs.lock().await;
+    let job = jobs.get(&id).expect("job should exist");
+    assert_eq!(job.status, JobStatus::Error);
+}
+
+#[tokio::test]
+async fn test_get_scan_handler_unauthorized_and_bad_request_jsonp() {
+    let state_auth = make_state(Some("secret"), None, false, true, "cb");
+    let mut params_auth = Map::new();
+    params_auth.insert("cb".to_string(), "myFn".to_string());
+    params_auth.insert("url".to_string(), "http://example.com".to_string());
+    let headers_missing_key = HeaderMap::new();
+
+    let unauthorized_resp =
+        get_scan_handler(State(state_auth), headers_missing_key, Query(params_auth))
+            .await
+            .into_response();
+    assert_eq!(unauthorized_resp.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        unauthorized_resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .starts_with("application/javascript")
+    );
+
+    let state_no_key = make_state(None, None, false, true, "cb");
+    let mut params_bad_req = Map::new();
+    params_bad_req.insert("cb".to_string(), "myFn".to_string());
+    let bad_req_resp =
+        get_scan_handler(State(state_no_key), HeaderMap::new(), Query(params_bad_req))
+            .await
+            .into_response();
+    assert_eq!(bad_req_resp.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        bad_req_resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .starts_with("application/javascript")
+    );
+}
+
+#[tokio::test]
+async fn test_get_result_handler_not_found_jsonp() {
+    let state = make_state(None, None, false, true, "cb");
+    let mut q = Map::new();
+    q.insert("cb".to_string(), "resultCb".to_string());
+    let resp = get_result_handler(
+        State(state),
+        HeaderMap::new(),
+        Path("missing-id".to_string()),
+        Query(q),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .starts_with("application/javascript")
+    );
+}
+
+#[tokio::test]
+async fn test_options_scan_handler_returns_no_content() {
+    let state = make_state(None, Some(vec!["*"]), true, false, "callback");
+    let mut headers = HeaderMap::new();
+    headers.insert("Origin", HeaderValue::from_static("http://any.origin"));
+
+    let resp = options_scan_handler(State(state), headers)
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        resp.headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok()),
+        Some("*")
+    );
+}
+
+#[tokio::test]
+async fn test_cors_headers_on_result_exact_origin() {
+    let state = make_state(
+        Some("secret"),
+        Some(vec!["http://localhost:3000"]),
+        false,
+        false,
+        "callback",
+    );
+
+    // Insert a dummy job
+    let id = "job1".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(id.clone(), test_job(JobStatus::Done, None, ""));
+    }
+
+    // Build headers with API key and Origin
+    let mut headers = HeaderMap::new();
+    headers.insert("X-API-KEY", HeaderValue::from_static("secret"));
+    headers.insert("Origin", HeaderValue::from_static("http://localhost:3000"));
+
+    let resp = super::get_result_handler(
+        State(state.clone()),
+        headers,
+        Path(id.clone()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let allow_origin = resp
+        .headers()
+        .get("access-control-allow-origin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(allow_origin, "http://localhost:3000");
+
+    let allow_methods = resp
+        .headers()
+        .get("access-control-allow-methods")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(allow_methods.contains("GET"));
+    assert!(allow_methods.contains("POST"));
+    assert!(allow_methods.contains("OPTIONS"));
+}
+
+#[tokio::test]
+async fn test_jsonp_unauthorized_with_callback() {
+    let state = make_state(Some("secret"), None, false, true, "cb");
+
+    // No API key header provided to trigger 401
+    let mut headers = HeaderMap::new();
+    headers.insert("Origin", HeaderValue::from_static("http://evil.test"));
+
+    // Provide ?cb=myFunc in query to request JSONP
+    let mut q = Map::new();
+    q.insert("cb".to_string(), "myFunc".to_string());
+
+    let resp = super::get_result_handler(
+        State(state.clone()),
+        headers,
+        Path("nojob".to_string()),
+        Query(q),
+    )
+    .await
+    .into_response();
+
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    let ctype = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(ctype.starts_with("application/javascript"));
+}
+
+#[tokio::test]
+async fn test_auth_success_and_failure() {
+    let state = make_state(Some("secret"), None, false, false, "callback");
+
+    // Insert a dummy job for success case
+    let ok_id = "ok".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(ok_id.clone(), test_job(JobStatus::Done, None, ""));
+    }
+
+    // Failure (no key)
+    let headers_fail = HeaderMap::new();
+    let resp_fail = super::get_result_handler(
+        State(state.clone()),
+        headers_fail,
+        Path(ok_id.clone()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp_fail.status(), StatusCode::UNAUTHORIZED);
+
+    // Success
+    let mut headers_ok = HeaderMap::new();
+    headers_ok.insert("X-API-KEY", HeaderValue::from_static("secret"));
+    let resp_ok = super::get_result_handler(
+        State(state.clone()),
+        headers_ok,
+        Path(ok_id.clone()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp_ok.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_options_preflight_headers() {
+    let state = make_state(None, Some(vec!["*"]), true, false, "callback");
+
+    let mut headers = HeaderMap::new();
+    headers.insert("Origin", HeaderValue::from_static("http://any.example"));
+
+    let resp =
+        super::options_result_handler(State(state.clone()), headers, Path("any".to_string()))
+            .await
+            .into_response();
+
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    let allow_origin = resp
+        .headers()
+        .get("access-control-allow-origin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(allow_origin, "*");
+
+    let allow_methods = resp
+        .headers()
+        .get("access-control-allow-methods")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(allow_methods.contains("OPTIONS"));
+}
+
+#[tokio::test]
+async fn test_scan_alternate_path_uses_same_handler_semantics() {
+    // This test validates that the result handler semantics (used by /result/{id})
+    // are suitable for /scan/{id} as well (same handler wired).
+    let state = make_state(Some("secret"), None, false, false, "callback");
+
+    // Insert job
+    let id = "alt".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(id.clone(), test_job(JobStatus::Running, None, ""));
+    }
+
+    let mut headers = HeaderMap::new();
+    headers.insert("X-API-KEY", HeaderValue::from_static("secret"));
+
+    // Directly call the same handler that is wired to both /result/{id} and /scan/{id}
+    let resp = super::get_result_handler(
+        State(state.clone()),
+        headers,
+        Path(id.clone()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_start_scan_handler_unauthorized_and_bad_request_jsonp() {
+    let state_auth = make_state(Some("secret"), None, false, true, "cb");
+    let mut params_auth = Map::new();
+    params_auth.insert("cb".to_string(), "startCb".to_string());
+    let unauthorized_resp = start_scan_handler(
+        State(state_auth),
+        HeaderMap::new(),
+        Query(params_auth),
+        Json(ScanRequest {
+            url: "http://example.com".to_string(),
+            options: None,
+        }),
+    )
+    .await
+    .into_response();
+    assert_eq!(unauthorized_resp.status(), StatusCode::UNAUTHORIZED);
+    let unauthorized_body = response_body_string(unauthorized_resp).await;
+    assert!(unauthorized_body.starts_with("startCb("));
+
+    let state_no_key = make_state(None, None, false, true, "cb");
+    let mut params_bad_req = Map::new();
+    params_bad_req.insert("cb".to_string(), "startCb".to_string());
+    let bad_req_resp = start_scan_handler(
+        State(state_no_key),
+        HeaderMap::new(),
+        Query(params_bad_req),
+        Json(ScanRequest {
+            url: "   ".to_string(),
+            options: None,
+        }),
+    )
+    .await
+    .into_response();
+    assert_eq!(bad_req_resp.status(), StatusCode::BAD_REQUEST);
+    let bad_req_body = response_body_string(bad_req_resp).await;
+    assert!(bad_req_body.starts_with("startCb("));
+}
+
+#[tokio::test]
+async fn test_start_scan_handler_success_creates_queued_job() {
+    let state = make_state(None, None, false, false, "cb");
+    let resp = start_scan_handler(
+        State(state.clone()),
+        HeaderMap::new(),
+        Query(Map::new()),
+        Json(ScanRequest {
+            url: "not-a-valid-target".to_string(),
+            options: Some(ScanOptions {
+                include_request: Some(true),
+                include_response: Some(true),
+                ..ScanOptions::default()
+            }),
+        }),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("valid json response");
+    let id = parsed["data"]["scan_id"]
+        .as_str()
+        .expect("scan id should be present")
+        .to_string();
+    let jobs = state.jobs.lock().await;
+    let job = jobs.get(&id).expect("job should be inserted");
+    // The spawned task may move from Queued to Running/Done/Error very quickly
+    assert!(
+        matches!(
+            job.status,
+            JobStatus::Queued | JobStatus::Running | JobStatus::Done | JobStatus::Error
+        ),
+        "job should have been created with a valid status, got: {:?}",
+        job.status
+    );
+    assert!(
+        job.queued_at_ms > 0,
+        "queued_at_ms must be set on submission"
+    );
+}
+
+#[tokio::test]
+async fn test_start_scan_handler_success_jsonp_response() {
+    let state = make_state(None, None, false, true, "cb");
+    let mut q = Map::new();
+    q.insert("cb".to_string(), "scanCb".to_string());
+    let resp = start_scan_handler(
+        State(state),
+        HeaderMap::new(),
+        Query(q),
+        Json(ScanRequest {
+            url: "still-not-valid-target".to_string(),
+            options: None,
+        }),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_body_string(resp).await;
+    assert!(body.starts_with("scanCb("));
+}
+
+#[tokio::test]
+async fn test_get_result_handler_plain_json_branches() {
+    let state_auth = make_state(Some("secret"), None, false, false, "callback");
+    let unauthorized = get_result_handler(
+        State(state_auth),
+        HeaderMap::new(),
+        Path("id".to_string()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+    let body = response_body_string(unauthorized).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json body");
+    assert_eq!(parsed["code"], 401);
+
+    let state_no_key = make_state(None, None, false, false, "callback");
+    let not_found = get_result_handler(
+        State(state_no_key),
+        HeaderMap::new(),
+        Path("missing".to_string()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(not_found.status(), StatusCode::NOT_FOUND);
+    let nf_body = response_body_string(not_found).await;
+    let nf_parsed: serde_json::Value = serde_json::from_str(&nf_body).expect("json body");
+    assert_eq!(nf_parsed["code"], 404);
+}
+
+#[tokio::test]
+async fn test_get_result_handler_running_message_branch() {
+    let state = make_state(None, None, false, false, "callback");
+    let id = "running-job".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(id.clone(), test_job(JobStatus::Running, None, ""));
+    }
+
+    let resp = get_result_handler(State(state), HeaderMap::new(), Path(id), Query(Map::new()))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json body");
+    assert_eq!(parsed["msg"], "ok");
+    assert_eq!(parsed["data"]["status"], "running");
+}
+
+#[tokio::test]
+async fn test_get_scan_handler_success_parses_query_options_and_jsonp() {
+    let state = make_state(None, None, false, true, "cb");
+    let mut params = Map::new();
+    params.insert("cb".to_string(), "getCb".to_string());
+    params.insert("url".to_string(), "bad-target-for-fast-fail".to_string());
+    params.insert("header".to_string(), "X-A:1,Invalid,X-B:2".to_string());
+    params.insert("encoders".to_string(), "url,html,base64".to_string());
+    params.insert("worker".to_string(), "3".to_string());
+    params.insert("delay".to_string(), "1".to_string());
+    params.insert("blind".to_string(), "http://callback.local".to_string());
+    params.insert("method".to_string(), "POST".to_string());
+    params.insert("data".to_string(), "k=v".to_string());
+    params.insert("user_agent".to_string(), "Dalfox-Test-UA".to_string());
+    params.insert("include_request".to_string(), "true".to_string());
+    params.insert("include_response".to_string(), "true".to_string());
+    params.insert(
+        "remote_payloads".to_string(),
+        "unknown-provider".to_string(),
+    );
+    params.insert(
+        "remote_wordlists".to_string(),
+        "unknown-provider".to_string(),
+    );
+
+    let resp = get_scan_handler(State(state.clone()), HeaderMap::new(), Query(params))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_body_string(resp).await;
+    assert!(body.starts_with("getCb("));
+    let inner = body.trim_start_matches("getCb(").trim_end_matches(");");
+    let parsed: serde_json::Value = serde_json::from_str(inner).expect("jsonp payload");
+    let id = parsed["data"]["scan_id"]
+        .as_str()
+        .expect("scan id")
+        .to_string();
+
+    let jobs = state.jobs.lock().await;
+    let job = jobs.get(&id).expect("job inserted");
+    assert!(matches!(
+        job.status,
+        JobStatus::Queued | JobStatus::Running | JobStatus::Done | JobStatus::Error
+    ));
+    assert!(
+        job.queued_at_ms > 0,
+        "queued_at_ms must be set on submission"
+    );
+}
+
+#[tokio::test]
+async fn test_run_scan_job_success_marks_done() {
+    let addr = start_target_server().await;
+    let state = make_state(None, None, false, false, "callback");
+    let id = "scan-job-success".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(id.clone(), test_job(JobStatus::Queued, None, ""));
+    }
+
+    let opts = ScanOptions {
+        cookie: Some("session=abc".to_string()),
+        worker: Some(4),
+        delay: Some(0),
+        timeout: None,
+        blind: None,
+        header: Some(vec![
+            "X-Test: 1".to_string(),
+            "InvalidHeaderLine".to_string(),
+            ":empty-name".to_string(),
+        ]),
+        method: Some("GET".to_string()),
+        data: None,
+        user_agent: Some("Dalfox-Server-Test".to_string()),
+        encoders: Some(vec!["none".to_string()]),
+        remote_payloads: Some(vec!["unknown-provider".to_string()]),
+        remote_wordlists: Some(vec!["unknown-provider".to_string()]),
+        include_request: Some(false),
+        include_response: Some(false),
+        callback_url: None,
+        param: None,
+        proxy: None,
+        follow_redirects: None,
+        skip_mining: None,
+        skip_discovery: None,
+        deep_scan: None,
+        skip_ast_analysis: None,
+    };
+
+    let run = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        run_scan_job(
+            state.clone(),
+            id.clone(),
+            format!("http://{}/", addr),
+            opts,
+            false,
+            false,
+        ),
+    )
+    .await;
+    assert!(run.is_ok(), "run_scan_job should complete in time");
+
+    let jobs = state.jobs.lock().await;
+    let job = jobs.get(&id).expect("job should remain");
+    assert_eq!(job.status, JobStatus::Done);
+    assert!(job.results.is_some());
+}
+
+#[tokio::test]
+async fn test_get_result_handler_jsonp_done_branch() {
+    let state = make_state(None, None, false, true, "cb");
+    let id = "done-jsonp".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(id.clone(), test_job(JobStatus::Done, Some(Vec::new()), ""));
+    }
+
+    let mut q = Map::new();
+    q.insert("cb".to_string(), "doneCb".to_string());
+    let resp = get_result_handler(State(state), HeaderMap::new(), Path(id), Query(q))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .starts_with("application/javascript")
+    );
+    let body = response_body_string(resp).await;
+    assert!(body.starts_with("doneCb("));
+}
+
+#[tokio::test]
+async fn test_get_scan_handler_success_plain_json_defaults() {
+    let state = make_state(None, None, false, false, "cb");
+    let mut params = Map::new();
+    params.insert("url".to_string(), "still-invalid-for-fast-fail".to_string());
+
+    let resp = get_scan_handler(State(state.clone()), HeaderMap::new(), Query(params))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json body");
+    let id = parsed["data"]["scan_id"]
+        .as_str()
+        .expect("scan id")
+        .to_string();
+
+    let jobs = state.jobs.lock().await;
+    let job = jobs.get(&id).expect("job inserted");
+    assert!(matches!(
+        job.status,
+        JobStatus::Queued | JobStatus::Running | JobStatus::Done | JobStatus::Error
+    ));
+    assert!(
+        job.queued_at_ms > 0,
+        "queued_at_ms must be set on submission"
+    );
+}
+
+#[tokio::test]
+async fn test_run_server_returns_on_invalid_bind_address() {
+    run_server(ServerArgs {
+        port: 6664,
+        host: "not a valid host".to_string(),
+        api_key: None,
+        log_file: None,
+        allowed_origins: None,
+        jsonp: false,
+        callback_param_name: "callback".to_string(),
+        cors_allow_methods: None,
+        cors_allow_headers: None,
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn test_run_server_returns_on_bind_failure_after_state_build() {
+    let guard_listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .expect("bind guard listener");
+    let guard_addr = guard_listener.local_addr().expect("guard addr");
+
+    run_server(ServerArgs {
+        port: guard_addr.port(),
+        host: Ipv4Addr::LOCALHOST.to_string(),
+        api_key: Some("server-key".to_string()),
+        log_file: None,
+        allowed_origins: Some(
+            "*,regex:^https://.*\\.example\\.com$,https://*.corp.local".to_string(),
+        ),
+        jsonp: true,
+        callback_param_name: "cb".to_string(),
+        cors_allow_methods: Some("GET,POST,OPTIONS".to_string()),
+        cors_allow_headers: Some("Content-Type,X-API-KEY".to_string()),
+    })
+    .await;
+
+    drop(guard_listener);
+}
+
+// ---- Tests for new endpoints: cancel, list, preflight ----
+
+#[tokio::test]
+async fn test_cancel_scan_handler_cancels_queued_job() {
+    let state = make_state(None, None, false, false, "cb");
+    let scan_id = "cancel-test-id".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(scan_id.clone(), test_job(JobStatus::Queued, None, ""));
+    }
+
+    let resp = cancel_scan_handler(
+        State(state.clone()),
+        HeaderMap::new(),
+        Path(scan_id.clone()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(parsed["data"]["cancelled"], true);
+    assert_eq!(parsed["data"]["previous_status"], "queued");
+
+    let jobs = state.jobs.lock().await;
+    let job = jobs.get(&scan_id).expect("job still exists");
+    assert_eq!(job.status, JobStatus::Cancelled);
+    assert!(job.cancelled.load(std::sync::atomic::Ordering::Relaxed));
+}
+
+#[tokio::test]
+async fn test_cancel_scan_handler_returns_404_for_unknown_id() {
+    let state = make_state(None, None, false, false, "cb");
+    let resp = cancel_scan_handler(
+        State(state),
+        HeaderMap::new(),
+        Path("nonexistent".to_string()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_cancel_scan_handler_requires_auth() {
+    let state = make_state(Some("secret"), None, false, false, "cb");
+    let resp = cancel_scan_handler(
+        State(state),
+        HeaderMap::new(),
+        Path("any".to_string()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_list_scans_handler_returns_all_jobs() {
+    let state = make_state(None, None, false, false, "cb");
+    {
+        let mut jobs = state.jobs.lock().await;
+        for (id, status) in [("a", JobStatus::Done), ("b", JobStatus::Running)] {
+            jobs.insert(id.to_string(), test_job(status, None, ""));
+        }
+    }
+
+    let resp = list_scans_handler(State(state), HeaderMap::new(), Query(Map::new()))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(parsed["data"]["total"], 2);
+    assert_eq!(parsed["data"]["scans"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn test_list_scans_handler_filters_by_status() {
+    let state = make_state(None, None, false, false, "cb");
+    {
+        let mut jobs = state.jobs.lock().await;
+        for (id, status) in [("a", JobStatus::Done), ("b", JobStatus::Running)] {
+            jobs.insert(id.to_string(), test_job(status, None, ""));
+        }
+    }
+
+    let mut params = Map::new();
+    params.insert("status".to_string(), "done".to_string());
+    let resp = list_scans_handler(State(state), HeaderMap::new(), Query(params))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(parsed["data"]["total"], 1);
+    assert_eq!(parsed["data"]["scans"][0]["status"], "done");
+}
+
+#[tokio::test]
+async fn test_list_scans_handler_requires_auth() {
+    let state = make_state(Some("secret"), None, false, false, "cb");
+    let resp = list_scans_handler(State(state), HeaderMap::new(), Query(Map::new()))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_preflight_handler_rejects_invalid_url() {
+    let state = make_state(None, None, false, false, "cb");
+    let resp = preflight_handler(
+        State(state),
+        HeaderMap::new(),
+        Query(Map::new()),
+        Json(ScanRequest {
+            url: "not-http".to_string(),
+            options: None,
+        }),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_preflight_handler_requires_auth() {
+    let state = make_state(Some("secret"), None, false, false, "cb");
+    let resp = preflight_handler(
+        State(state),
+        HeaderMap::new(),
+        Query(Map::new()),
+        Json(ScanRequest {
+            url: "http://example.com".to_string(),
+            options: None,
+        }),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_preflight_handler_unreachable_target() {
+    let state = make_state(None, None, false, false, "cb");
+    let resp = preflight_handler(
+        State(state),
+        HeaderMap::new(),
+        Query(Map::new()),
+        Json(ScanRequest {
+            url: "http://127.0.0.1:1/unreachable".to_string(),
+            options: Some(ScanOptions {
+                timeout: Some(1),
+                ..ScanOptions::default()
+            }),
+        }),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(parsed["data"]["reachable"], false);
+    assert_eq!(parsed["data"]["error_code"], "CONNECTION_FAILED");
+}
+
+#[test]
+fn test_validate_scan_options_accepts_defaults() {
+    assert!(validate_scan_options(&ScanOptions::default()).is_ok());
+}
+
+#[test]
+fn test_validate_scan_options_rejects_out_of_range() {
+    let bad_timeout = ScanOptions {
+        timeout: Some(0),
+        ..ScanOptions::default()
+    };
+    assert!(validate_scan_options(&bad_timeout).is_err());
+
+    let bad_timeout_hi = ScanOptions {
+        timeout: Some(9999),
+        ..ScanOptions::default()
+    };
+    assert!(validate_scan_options(&bad_timeout_hi).is_err());
+
+    let bad_delay = ScanOptions {
+        delay: Some(999_999),
+        ..ScanOptions::default()
+    };
+    assert!(validate_scan_options(&bad_delay).is_err());
+
+    let bad_worker = ScanOptions {
+        worker: Some(0),
+        ..ScanOptions::default()
+    };
+    assert!(validate_scan_options(&bad_worker).is_err());
+
+    let bad_worker_hi = ScanOptions {
+        worker: Some(999_999),
+        ..ScanOptions::default()
+    };
+    assert!(validate_scan_options(&bad_worker_hi).is_err());
+}
+
+#[tokio::test]
+async fn test_start_scan_handler_rejects_out_of_range_timeout() {
+    let state = make_state(None, None, false, false, "cb");
+    let resp = start_scan_handler(
+        State(state),
+        HeaderMap::new(),
+        Query(Map::new()),
+        Json(ScanRequest {
+            url: "http://example.com".to_string(),
+            options: Some(ScanOptions {
+                timeout: Some(9999),
+                ..ScanOptions::default()
+            }),
+        }),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body = response_body_string(resp).await;
+    assert!(body.contains("timeout must be between"));
+}
+
+#[tokio::test]
+async fn test_get_scan_handler_rejects_out_of_range_delay() {
+    let state = make_state(None, None, false, false, "cb");
+    let mut params = Map::new();
+    params.insert("url".to_string(), "http://example.com".to_string());
+    params.insert("delay".to_string(), "999999".to_string());
+    let resp = get_scan_handler(State(state), HeaderMap::new(), Query(params))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_get_result_handler_emits_timestamps() {
+    let state = make_state(None, None, false, false, "cb");
+    let id = "ts-done".to_string();
+    {
+        let mut jobs = state.jobs.lock().await;
+        let mut job = test_job(JobStatus::Done, Some(vec![]), "http://example.com");
+        job.started_at_ms = Some(job.queued_at_ms + 10);
+        job.finished_at_ms = Some(job.queued_at_ms + 100);
+        jobs.insert(id.clone(), job);
+    }
+    let resp = get_result_handler(
+        State(state),
+        HeaderMap::new(),
+        Path(id.clone()),
+        Query(Map::new()),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let data = &parsed["data"];
+    assert!(data["queued_at_ms"].as_i64().is_some());
+    assert!(data["started_at_ms"].as_i64().is_some());
+    assert!(data["finished_at_ms"].as_i64().is_some());
+    assert_eq!(data["duration_ms"], 90);
+}
+
+#[tokio::test]
+async fn test_list_scans_handler_emits_timestamps() {
+    let state = make_state(None, None, false, false, "cb");
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(
+            "a".to_string(),
+            test_job(JobStatus::Done, None, "http://example.com"),
+        );
+    }
+    let resp = list_scans_handler(State(state), HeaderMap::new(), Query(Map::new()))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    let entry = &parsed["data"]["scans"][0];
+    assert!(entry["queued_at_ms"].as_i64().is_some());
+    assert!(entry["finished_at_ms"].as_i64().is_some());
+}
+
+#[tokio::test]
+async fn test_purge_expired_jobs_removes_old_terminal_jobs() {
+    let state = make_state(None, None, false, false, "cb");
+    {
+        let mut jobs = state.jobs.lock().await;
+        let mut old = test_job(JobStatus::Done, None, "");
+        old.finished_at_ms = Some(now_ms() - (JOB_RETENTION_SECS + 10) * 1000);
+        jobs.insert("old".to_string(), old);
+        jobs.insert("fresh".to_string(), test_job(JobStatus::Done, None, ""));
+        jobs.insert("active".to_string(), test_job(JobStatus::Running, None, ""));
+    }
+
+    purge_expired_jobs(&state).await;
+
+    let jobs = state.jobs.lock().await;
+    assert!(
+        !jobs.contains_key("old"),
+        "old terminal job should be purged"
+    );
+    assert!(jobs.contains_key("fresh"), "fresh terminal job must remain");
+    assert!(
+        jobs.contains_key("active"),
+        "active job must never be purged"
+    );
+}
+
+#[tokio::test]
+async fn test_cancel_scan_handler_purge_requires_terminal() {
+    let state = make_state(None, None, false, false, "cb");
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(
+            "running-purge".to_string(),
+            test_job(JobStatus::Running, None, ""),
+        );
+    }
+    let mut params = Map::new();
+    params.insert("purge".to_string(), "1".to_string());
+    let resp = cancel_scan_handler(
+        State(state.clone()),
+        HeaderMap::new(),
+        Path("running-purge".to_string()),
+        Query(params),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+    let jobs = state.jobs.lock().await;
+    assert!(
+        jobs.contains_key("running-purge"),
+        "non-terminal job must not be purged"
+    );
+}
+
+#[tokio::test]
+async fn test_list_scans_handler_rejects_invalid_status_filter() {
+    let state = make_state(None, None, false, false, "cb");
+    let mut params = Map::new();
+    params.insert("status".to_string(), "bogus".to_string());
+    let resp = list_scans_handler(State(state), HeaderMap::new(), Query(params))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body = response_body_string(resp).await;
+    assert!(body.contains("invalid status filter"));
+}
+
+#[tokio::test]
+async fn test_list_scans_handler_pagination_slices_and_reports_has_more() {
+    let state = make_state(None, None, false, false, "cb");
+    {
+        let mut jobs = state.jobs.lock().await;
+        // Insert 5 jobs with increasing queued_at_ms so sort order is
+        // deterministic for this test.
+        for i in 0..5 {
+            let mut job = test_job(JobStatus::Done, None, &format!("http://t{}", i));
+            job.queued_at_ms = 1_000_000 + i as i64;
+            jobs.insert(format!("job-{}", i), job);
+        }
+    }
+
+    let mut params = Map::new();
+    params.insert("offset".to_string(), "1".to_string());
+    params.insert("limit".to_string(), "2".to_string());
+    let resp = list_scans_handler(State(state), HeaderMap::new(), Query(params))
+        .await
+        .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(parsed["data"]["total"], 5);
+    assert_eq!(parsed["data"]["scans"].as_array().unwrap().len(), 2);
+    let pag = &parsed["data"]["pagination"];
+    assert_eq!(pag["offset"], 1);
+    assert_eq!(pag["limit"], 2);
+    assert_eq!(pag["returned"], 2);
+    assert_eq!(pag["has_more"], true);
+}
+
+#[tokio::test]
+async fn test_list_scans_handler_zero_limit_returns_all() {
+    let state = make_state(None, None, false, false, "cb");
+    {
+        let mut jobs = state.jobs.lock().await;
+        for i in 0..3 {
+            jobs.insert(
+                format!("job-{}", i),
+                test_job(JobStatus::Done, None, "http://example.com"),
+            );
+        }
+    }
+    let resp = list_scans_handler(State(state), HeaderMap::new(), Query(Map::new()))
+        .await
+        .into_response();
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(parsed["data"]["scans"].as_array().unwrap().len(), 3);
+    assert_eq!(parsed["data"]["pagination"]["has_more"], false);
+}
+
+#[tokio::test]
+async fn test_cancel_scan_handler_purge_deletes_terminal_job() {
+    let state = make_state(None, None, false, false, "cb");
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(
+            "done-purge".to_string(),
+            test_job(JobStatus::Done, None, ""),
+        );
+    }
+    let mut params = Map::new();
+    params.insert("purge".to_string(), "1".to_string());
+    let resp = cancel_scan_handler(
+        State(state.clone()),
+        HeaderMap::new(),
+        Path("done-purge".to_string()),
+        Query(params),
+    )
+    .await
+    .into_response();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = response_body_string(resp).await;
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(parsed["data"]["deleted"], true);
+    assert_eq!(parsed["data"]["previous_status"], "done");
+
+    let jobs = state.jobs.lock().await;
+    assert!(!jobs.contains_key("done-purge"));
+}
