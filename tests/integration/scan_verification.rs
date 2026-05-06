@@ -339,6 +339,46 @@ async fn safe_static() -> impl IntoResponse {
     Html(r#"<!DOCTYPE html><html><body><p>Hello, world!</p></body></html>"#.to_string())
 }
 
+/// Mock JWT-protected endpoint that does NOT verify the signature and
+/// reflects a string field of the JWT payload into HTML. Represents the
+/// real-world class where a frontend or proxy decodes the token for
+/// display purposes without going through a verifying parser.
+async fn vuln_jwt_unverified(Query(p): Query<HashMap<String, String>>) -> impl IntoResponse {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let token = p.get("token").cloned().unwrap_or_default();
+    let segs: Vec<&str> = token.split('.').collect();
+    let name = if segs.len() == 3 {
+        URL_SAFE_NO_PAD
+            .decode(segs[1])
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Html(format!(
+        r#"<!DOCTYPE html><html><head><title>Welcome</title></head>
+<body><h1>Hello, {name}</h1></body></html>"#
+    ))
+}
+
+/// Mock endpoint receiving a parameter whose value is bare URL-encoded JSON
+/// (no base64 layer). Reflects the `q` field from the decoded object into
+/// HTML.
+async fn vuln_url_json(Query(p): Query<HashMap<String, String>>) -> impl IntoResponse {
+    let blob = p.get("blob").cloned().unwrap_or_default();
+    let q = serde_json::from_str::<serde_json::Value>(&blob)
+        .ok()
+        .and_then(|v| v.get("q").and_then(|m| m.as_str()).map(String::from))
+        .unwrap_or_default();
+    Html(format!(
+        r#"<!DOCTYPE html><html><head><title>Search</title></head>
+<body><p>Query: {q}</p></body></html>"#
+    ))
+}
+
 /// Mirrors the shape of the unfixed kakaoinvestment endpoint:
 /// `?qs=BASE64({"move_url":"...","acc_domain":"...","auth_domain":"..."})`
 /// where the server decodes/parses the JSON and reflects the `move_url`
@@ -403,6 +443,10 @@ async fn start_test_server() -> SocketAddr {
         .route("/multi", get(vuln_multi_param))
         // Nested encoding: base64-of-JSON with leaf-field reflection
         .route("/auth/authentication.cm", get(vuln_b64_json_field))
+        // Nested encoding: JWT (unverified signature) with payload-field reflection
+        .route("/auth/jwt", get(vuln_jwt_unverified))
+        // Nested encoding: bare URL-encoded JSON
+        .route("/api/blob", get(vuln_url_json))
         // Safe / negative
         .route("/safe/stripped", get(safe_stripped))
         .route("/safe/truncated", get(safe_truncated))
@@ -918,4 +962,65 @@ async fn test_nested_b64_json_field_xss() {
         "V",
         "nested b64-of-JSON: expected DOM-verified finding",
     );
+}
+
+/// JWT-protected endpoint that doesn't verify the signature. Discovery's
+/// JWT inference must pick up the 3-segment dotted shape, decode the
+/// middle (b64url-of-JSON) payload, register `token[name]` as a virtual
+/// sub-parameter with a `JsonField → Base64Url → JwtAssemble` pipeline,
+/// and surface a finding when the marker survives reflection.
+#[tokio::test]
+async fn test_nested_jwt_payload_xss() {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let addr = start_test_server().await;
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(r#"{"sub":"u","name":"alice"}"#);
+    let signature = URL_SAFE_NO_PAD.encode("fake_signature_bytes");
+    let token = format!("{header}.{payload}.{signature}");
+    let mut args = base_scan_args();
+    args.targets = vec![format!("http://{addr}/auth/jwt?token={token}")];
+    let findings = run_scan_and_collect(args).await;
+    assert_detected(&findings, "JWT unverified-signature: token[name]");
+    let exact = findings
+        .iter()
+        .any(|f| f["param"].as_str() == Some("token[name]"));
+    assert!(
+        exact,
+        "expected at least one finding param == `token[name]`; got: {:?}",
+        findings
+            .iter()
+            .map(|f| f["param"].as_str().unwrap_or(""))
+            .collect::<Vec<_>>()
+    );
+    assert_has_type(&findings, "V", "JWT: expected DOM-verified finding");
+}
+
+/// Bare URL-encoded JSON in a query param. After URL-decoding (which axum
+/// performs at extract time), the value starts with `{`; discovery's
+/// `infer_url_json` strategy should register `blob[q]` as a virtual
+/// sub-parameter with a single `JsonField` step (no base64 layer).
+#[tokio::test]
+async fn test_nested_url_encoded_json_xss() {
+    let addr = start_test_server().await;
+    // Use raw `{`/`}` characters; reqwest/axum handle the URL-encoding.
+    let blob = r#"{"q":"hello"}"#;
+    let mut args = base_scan_args();
+    args.targets = vec![format!(
+        "http://{addr}/api/blob?blob={}",
+        urlencoding::encode(blob)
+    )];
+    let findings = run_scan_and_collect(args).await;
+    assert_detected(&findings, "URL-encoded JSON: blob[q]");
+    let exact = findings
+        .iter()
+        .any(|f| f["param"].as_str() == Some("blob[q]"));
+    assert!(
+        exact,
+        "expected `blob[q]`; got: {:?}",
+        findings
+            .iter()
+            .map(|f| f["param"].as_str().unwrap_or(""))
+            .collect::<Vec<_>>()
+    );
+    assert_has_type(&findings, "V", "URL-encoded JSON: expected DOM-verified");
 }

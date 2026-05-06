@@ -4,6 +4,14 @@ fn b64(s: &str) -> String {
     STANDARD.encode(s)
 }
 
+fn b64u(s: &str) -> String {
+    URL_SAFE_NO_PAD.encode(s)
+}
+
+fn make_jwt(header: &str, payload: &str, sig: &str) -> String {
+    format!("{}.{}.{}", b64u(header), b64u(payload), b64u(sig))
+}
+
 #[test]
 fn step_base64_roundtrip() {
     let s = EncodingStep::Base64;
@@ -202,7 +210,7 @@ fn infer_handles_url_encoded_b64_survivors() {
     // still accept the value once URL-decoding occurred upstream.
     let json = r#"{"f":"v_long_enough_now"}"#;
     let v = b64(json);
-    assert!(looks_like_base64(&v));
+    assert!(looks_like_b64(&v, /*allow_url_safe=*/ false));
 }
 
 #[test]
@@ -220,6 +228,186 @@ fn infer_path_segments_preserve_dots_and_brackets_for_display() {
         nested.iter().flat_map(|n| n.path.iter().cloned()).collect();
     assert!(segs.contains("a.b"), "got: {segs:?}");
     assert!(segs.contains("c[d]"), "got: {segs:?}");
+}
+
+#[test]
+fn step_base64url_no_padding() {
+    let s = EncodingStep::Base64Url;
+    // The "??" payload (0x3f 0x3f) base64-standard is "Pz8=" — url-safe no
+    // pad must drop the `=` and use the same alphabet (no `+`/`/` to swap).
+    let out = s.apply("??").expect("apply");
+    assert_eq!(out, "Pz8");
+    // Bytes that produce `+` and `/` in standard alphabet end up as `-`/`_`
+    // in url-safe. Use bytes containing the bit patterns that map to the
+    // problematic chars.
+    let raw = String::from_utf8_lossy(&[0xfb, 0xff, 0xff]).to_string();
+    let out = s.apply(&raw).expect("apply");
+    assert!(!out.contains('+'));
+    assert!(!out.contains('/'));
+    assert!(!out.contains('='));
+}
+
+#[test]
+fn step_jwt_assemble_concatenates_segments() {
+    let s = EncodingStep::JwtAssemble {
+        header_b64u: "AAA".to_string(),
+        signature_b64u: "ZZZ".to_string(),
+    };
+    assert_eq!(s.apply("MIDDLE").expect("apply"), "AAA.MIDDLE.ZZZ");
+}
+
+#[test]
+fn infer_strategy_url_json_no_encoding() {
+    // Bare JSON in the value (after URL-decode by query_pairs).
+    let v = r#"{"name":"alice","email":"a@b"}"#;
+    let nested = infer_nested_pipelines(v);
+    let pointers: Vec<&str> = nested.iter().map(|n| n.pointer.as_str()).collect();
+    assert!(pointers.contains(&"/name"));
+    assert!(pointers.contains(&"/email"));
+    // Pipeline should be a single JsonField step (no base64).
+    let name_field = nested.iter().find(|n| n.pointer == "/name").unwrap();
+    assert_eq!(name_field.pipeline.steps.len(), 1);
+    assert!(matches!(
+        name_field.pipeline.steps[0],
+        EncodingStep::JsonField { .. }
+    ));
+    // Round-trip
+    let injected = name_field.pipeline.apply("PAYLOAD").expect("apply");
+    let parsed: serde_json::Value = serde_json::from_str(&injected).expect("json");
+    assert_eq!(parsed["name"], "PAYLOAD");
+    assert_eq!(parsed["email"], "a@b");
+}
+
+#[test]
+fn infer_strategy_b64url_json() {
+    // Use a value whose JSON contains bytes that produce `-`/`_` in url-safe
+    // (and `+`/`/` in standard) — the `?` byte and some non-ASCII content.
+    // The `>>>` chunk encodes to `Pj4-` in url-safe vs `Pj4+` in standard,
+    // so the orchestrator's alphabet hint will pick b64url.
+    let json = r#"{"sub":"a>>>b","note":"x"}"#;
+    let v = b64u(json);
+    assert!(
+        v.contains('-') || v.contains('_'),
+        "test fixture must have url-safe-distinctive char: {v}"
+    );
+    let nested = infer_nested_pipelines(&v);
+    let pointers: Vec<&str> = nested.iter().map(|n| n.pointer.as_str()).collect();
+    assert!(pointers.contains(&"/sub"));
+    assert!(pointers.contains(&"/note"));
+    let sub = nested.iter().find(|n| n.pointer == "/sub").unwrap();
+    assert!(
+        matches!(sub.pipeline.steps.last().unwrap(), EncodingStep::Base64Url),
+        "expected Base64Url, got pipeline: {:?}",
+        sub.pipeline.steps
+    );
+    // Round-trip
+    let injected = sub.pipeline.apply("MARKER").expect("apply");
+    let decoded =
+        String::from_utf8(URL_SAFE_NO_PAD.decode(&injected).expect("b64u")).expect("utf8");
+    let parsed: serde_json::Value = serde_json::from_str(&decoded).expect("json");
+    assert_eq!(parsed["sub"], "MARKER");
+    assert_eq!(parsed["note"], "x");
+}
+
+#[test]
+fn infer_strategy_shared_alphabet_falls_back_to_b64() {
+    // Shared-alphabet (alphanumeric-only) values should pick standard b64.
+    // Both decoders would succeed on the same bytes; we pick b64 for
+    // back-compat with existing opaque-token usage.
+    let json = r#"{"f":"alphanumeric_value"}"#;
+    let v = b64(json);
+    assert!(!v.contains('-') && !v.contains('_') && !v.contains('+') && !v.contains('/'));
+    let nested = infer_nested_pipelines(&v);
+    let f = nested.iter().find(|n| n.pointer == "/f").unwrap();
+    assert!(matches!(
+        f.pipeline.steps.last().unwrap(),
+        EncodingStep::Base64
+    ));
+}
+
+#[test]
+fn infer_strategy_jwt_classic_shape() {
+    let header = r#"{"alg":"HS256","typ":"JWT"}"#;
+    let payload = r#"{"sub":"alice","name":"Alice","iat":1234567890}"#;
+    let sig = "fake_signature_bytes_here";
+    let jwt = make_jwt(header, payload, sig);
+    let nested = infer_nested_pipelines(&jwt);
+    let pointers: Vec<&str> = nested.iter().map(|n| n.pointer.as_str()).collect();
+    // Only string leaves — `iat` (number) is skipped.
+    assert!(pointers.contains(&"/sub"));
+    assert!(pointers.contains(&"/name"));
+    assert!(!pointers.contains(&"/iat"));
+
+    let name_field = nested.iter().find(|n| n.pointer == "/name").unwrap();
+    // Pipeline shape: JsonField → Base64Url → JwtAssemble
+    assert_eq!(name_field.pipeline.steps.len(), 3);
+    assert!(matches!(
+        name_field.pipeline.steps[2],
+        EncodingStep::JwtAssemble { .. }
+    ));
+
+    // Round-trip: applied output must be a 3-segment dotted token whose
+    // middle segment decodes to the modified payload, and whose header /
+    // signature segments are preserved verbatim.
+    let injected = name_field.pipeline.apply("XSS_MARKER").expect("apply");
+    let segs: Vec<&str> = injected.split('.').collect();
+    assert_eq!(segs.len(), 3);
+    assert_eq!(segs[0], b64u(header));
+    assert_eq!(segs[2], b64u(sig));
+    let payload_decoded =
+        String::from_utf8(URL_SAFE_NO_PAD.decode(segs[1]).expect("b64u")).expect("utf8");
+    let parsed: serde_json::Value = serde_json::from_str(&payload_decoded).expect("json");
+    assert_eq!(parsed["name"], "XSS_MARKER");
+    assert_eq!(parsed["sub"], "alice");
+}
+
+#[test]
+fn infer_strategy_jwt_rejects_non_three_segment() {
+    // Two segments — not a JWT.
+    assert!(infer_jwt(&format!("{}.{}", b64u("{\"a\":\"b\"}"), b64u("c"))).is_empty());
+    // Four segments.
+    assert!(
+        infer_jwt(&format!(
+            "{}.{}.{}.{}",
+            b64u("{}"),
+            b64u("{}"),
+            b64u("z"),
+            b64u("z")
+        ))
+        .is_empty()
+    );
+    // Three segments but middle isn't JSON.
+    assert!(infer_jwt(&format!("{}.{}.{}", b64u("AAA"), b64u("plain"), b64u("z"))).is_empty());
+    // Three segments but with characters outside the b64url alphabet
+    // (e.g. legacy `+/` that some implementations accidentally produce).
+    assert!(infer_jwt("a+b.c/d.e=f").is_empty());
+}
+
+#[test]
+fn infer_strategy_priority_jwt_beats_b64() {
+    // A JWT-shaped string also has b64url-charset segments. Make sure the
+    // JWT strategy wins (we get the JwtAssemble pipeline, not a plain
+    // base64 result on the whole string).
+    let jwt = make_jwt(r#"{"a":"b"}"#, r#"{"sub":"u"}"#, "sig");
+    let nested = infer_nested_pipelines(&jwt);
+    assert!(!nested.is_empty());
+    let sub = nested.iter().find(|n| n.pointer == "/sub").unwrap();
+    assert_eq!(sub.pipeline.steps.len(), 3);
+    assert!(matches!(
+        sub.pipeline.steps[2],
+        EncodingStep::JwtAssemble { .. }
+    ));
+}
+
+#[test]
+fn infer_strategy_priority_url_json_beats_b64() {
+    // Bare JSON like `{"a":"b"}` would never decode as b64-of-JSON anyway,
+    // but the orchestrator should pick `infer_url_json` first so its
+    // single-step pipeline (no Base64) is what callers see.
+    let v = r#"{"a":"long_value_here_to_pass_filters"}"#;
+    let nested = infer_nested_pipelines(v);
+    let a = nested.iter().find(|n| n.pointer == "/a").unwrap();
+    assert_eq!(a.pipeline.steps.len(), 1);
 }
 
 #[test]
