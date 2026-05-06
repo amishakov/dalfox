@@ -206,6 +206,23 @@ fn infer_handles_url_encoded_b64_survivors() {
 }
 
 #[test]
+fn infer_path_segments_preserve_dots_and_brackets_for_display() {
+    // The `path` field on NestedField is what discovery joins into a
+    // bracket-style display name. Dotted/bracketed keys must round-trip
+    // verbatim so the chosen `qs[a.b]` / `qs[c[d]]` shape stays unambiguous.
+    let mut map = serde_json::Map::new();
+    map.insert("a.b".into(), serde_json::Value::String("x".into()));
+    map.insert("c[d]".into(), serde_json::Value::String("y".into()));
+    let json = serde_json::Value::Object(map).to_string();
+    let v = b64(&json);
+    let nested = infer_nested_pipelines(&v);
+    let segs: std::collections::HashSet<String> =
+        nested.iter().flat_map(|n| n.path.iter().cloned()).collect();
+    assert!(segs.contains("a.b"), "got: {segs:?}");
+    assert!(segs.contains("c[d]"), "got: {segs:?}");
+}
+
+#[test]
 fn pointer_escapes_special_chars() {
     // Field names with `/` and `~` should round-trip through the pointer
     // encoding back to the original key.

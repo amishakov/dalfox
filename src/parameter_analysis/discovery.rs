@@ -325,10 +325,19 @@ pub async fn check_query_discovery(
             continue;
         }
         for nf in nested {
+            // Bracket-style naming so dotted JSON keys (and parent param
+            // names that already contain `.`) don't collide with each
+            // other: `qs[move_url]`, `qs[items][0][name]`, `qs[a.b]`.
             let display_name = if nf.path.is_empty() {
                 name.clone()
             } else {
-                format!("{}.{}", name, nf.path.join("."))
+                let mut s = name.clone();
+                for seg in &nf.path {
+                    s.push('[');
+                    s.push_str(seg);
+                    s.push(']');
+                }
+                s
             };
             // Skip if this synthetic name was already registered.
             if discovered_names.contains(&display_name) {

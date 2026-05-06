@@ -898,18 +898,24 @@ async fn test_nested_b64_json_field_xss() {
     assert_detected(&findings, "nested b64-of-JSON: qs.move_url");
     // The synthetic sub-param name should appear so reports can point at the
     // exact JSON field that was exploitable.
-    let any_move_url = findings.iter().any(|f| {
-        f["param"]
-            .as_str()
-            .map(|p| p.contains("move_url"))
-            .unwrap_or(false)
-    });
+    let exact_move_url = findings
+        .iter()
+        .any(|f| f["param"].as_str() == Some("qs[move_url]"));
     assert!(
-        any_move_url,
-        "expected at least one finding to name `move_url`; got params: {:?}",
+        exact_move_url,
+        "expected at least one finding param == `qs[move_url]`; got params: {:?}",
         findings
             .iter()
             .map(|f| f["param"].as_str().unwrap_or(""))
             .collect::<Vec<_>>()
+    );
+    // Now that Stage 3 (active probing) routes the marker through the
+    // pipeline at the correct wire-name, raw `<script>...` payloads should
+    // survive and produce a DOM-verified (`V`) finding rather than only
+    // encoded fallbacks.
+    assert_has_type(
+        &findings,
+        "V",
+        "nested b64-of-JSON: expected DOM-verified finding",
     );
 }

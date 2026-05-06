@@ -96,9 +96,16 @@ pub struct Param {
     pub pre_encoding_pipeline: Option<crate::encoding::pipeline::EncodingPipeline>,
     /// HTTP-layer parameter name used when the payload must be inserted at a
     /// different name than this `Param.name`. Set when `name` is a synthetic
-    /// nested-field display label (e.g. `qs.move_url`) but the wire-level
+    /// nested-field display label (e.g. `qs[move_url]`) but the wire-level
     /// substitution targets the parent parameter (`qs`). When `None`, callers
     /// fall back to `name`.
+    ///
+    /// Currently honored in the `Location::Query` substitution paths
+    /// (`build_injected_url`, `active_probe_param`). `Location::Body`,
+    /// `Header`, `JsonBody`, `MultipartBody` still substitute by `name`
+    /// because nested-field discovery (`infer_nested_pipelines`) only
+    /// emits Query params today. Extend those branches before enabling
+    /// nested discovery on other locations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wire_name: Option<String>,
     /// POST target URL resolved from form action attribute.
@@ -207,8 +214,9 @@ pub async fn active_probe_param(
         let user_agent = target.user_agent.clone();
         let data = target.data.clone();
         let param_name = param.name.clone();
+        let wire_name = param.effective_wire_name().to_string();
         let location = param.location.clone();
-        let pre_encoding = param.pre_encoding.clone();
+        let param_for_encoding = param.clone();
         let form_action_url = param.form_action_url.clone();
         let ignore_return = target.ignore_return.clone();
 
@@ -223,10 +231,14 @@ pub async fn active_probe_param(
                 c,
                 crate::scanning::markers::close_marker()
             );
-            // Apply pre-encoding (base64/2base64) so the server can decode
-            // the probe value the same way it decodes normal user input.
-            let payload =
-                crate::encoding::pre_encoding::apply_pre_encoding(&probe_payload, &pre_encoding);
+            // Apply per-Param pre-encoding (pipeline > legacy) so the server
+            // can decode the probe value the same way it decodes normal
+            // user input. For nested params this also wraps the marker into
+            // the JSON shell at the right field pointer.
+            let payload = crate::encoding::pre_encoding::apply_param_encoding(
+                &probe_payload,
+                &param_for_encoding,
+            );
             // Force POST for Body/JsonBody/MultipartBody params even when default target method is GET
             let req_method = match location {
                 Location::Body | Location::JsonBody | Location::MultipartBody => {
@@ -246,7 +258,7 @@ pub async fn active_probe_param(
                     let mut new_pairs: Vec<(String, String)> = Vec::new();
                     let mut replaced = false;
                     for (k, v) in url_original.query_pairs() {
-                        if k == param_name {
+                        if k == wire_name {
                             new_pairs.push((k.to_string(), payload.clone()));
                             replaced = true;
                         } else {
@@ -254,7 +266,7 @@ pub async fn active_probe_param(
                         }
                     }
                     if !replaced {
-                        new_pairs.push((param_name.clone(), payload.clone()));
+                        new_pairs.push((wire_name.clone(), payload.clone()));
                     }
                     url.query_pairs_mut().clear();
                     for (k, v) in new_pairs {
@@ -563,7 +575,10 @@ pub async fn active_probe_param(
 
     // If '<' is invalid and no pre_encoding is set, try double/triple URL encoding
     // to detect servers that multi-decode input (e.g. double URL decode).
+    // Skip when a pipeline is already set — the nested encoding is fixed by
+    // structure inference and would clash with extra URL-decode rounds.
     if param.pre_encoding.is_none()
+        && param.pre_encoding_pipeline.is_none()
         && iv.contains(&'<')
         && matches!(param.location, Location::Query | Location::Path)
     {
