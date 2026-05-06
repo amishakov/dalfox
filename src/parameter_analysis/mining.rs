@@ -380,6 +380,8 @@ pub async fn probe_dictionary_params(
                                 valid_specials: None,
                                 invalid_specials: None,
                                 pre_encoding: None,
+                                pre_encoding_pipeline: None,
+                                wire_name: None,
                                 form_action_url: None,
                                 form_origin_url: None,
                             });
@@ -416,6 +418,8 @@ pub async fn probe_dictionary_params(
                                     valid_specials: Some(valid),
                                     invalid_specials: Some(invalid),
                                     pre_encoding: None,
+                                    pre_encoding_pipeline: None,
+                                    wire_name: None,
                                     form_action_url: None,
                                     form_origin_url: None,
                                 });
@@ -497,6 +501,8 @@ pub async fn probe_dictionary_params(
                 valid_specials: orig.valid_specials.clone(),
                 invalid_specials: orig.invalid_specials.clone(),
                 pre_encoding: None,
+                pre_encoding_pipeline: None,
+                wire_name: None,
                 form_action_url: None,
                 form_origin_url: None,
             });
@@ -509,6 +515,8 @@ pub async fn probe_dictionary_params(
                 valid_specials: None,
                 invalid_specials: None,
                 pre_encoding: None,
+                pre_encoding_pipeline: None,
+                wire_name: None,
                 form_action_url: None,
                 form_origin_url: None,
             });
@@ -624,6 +632,8 @@ pub async fn probe_body_params(
                                 valid_specials: Some(valid),
                                 invalid_specials: Some(invalid),
                                 pre_encoding: None,
+                                pre_encoding_pipeline: None,
+                                wire_name: None,
                                 form_action_url: None,
                                 form_origin_url: None,
                             });
@@ -700,6 +710,8 @@ pub async fn probe_body_params(
                     valid_specials: orig.valid_specials.clone(),
                     invalid_specials: orig.invalid_specials.clone(),
                     pre_encoding: None,
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
@@ -714,6 +726,8 @@ pub async fn probe_body_params(
                     valid_specials: None,
                     invalid_specials: None,
                     pre_encoding: None,
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
@@ -850,6 +864,8 @@ pub async fn probe_response_id_params(
                                     valid_specials: Some(valid),
                                     invalid_specials: Some(invalid),
                                     pre_encoding: None,
+                                    pre_encoding_pipeline: None,
+                                    wire_name: None,
                                     form_action_url: None,
                                     form_origin_url: None,
                                 });
@@ -925,6 +941,8 @@ pub async fn probe_response_id_params(
                     valid_specials: orig.valid_specials.clone(),
                     invalid_specials: orig.invalid_specials.clone(),
                     pre_encoding: None,
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
@@ -939,6 +957,8 @@ pub async fn probe_response_id_params(
                     valid_specials: None,
                     invalid_specials: None,
                     pre_encoding: None,
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
@@ -1079,6 +1099,8 @@ pub async fn probe_json_body_params(
                             valid_specials: Some(valid),
                             invalid_specials: Some(invalid),
                             pre_encoding: None,
+                            pre_encoding_pipeline: None,
+                            wire_name: None,
                             form_action_url: None,
                             form_origin_url: None,
                         });
@@ -1155,6 +1177,8 @@ pub async fn probe_json_body_params(
                 valid_specials: orig.valid_specials.clone(),
                 invalid_specials: orig.invalid_specials.clone(),
                 pre_encoding: None,
+                pre_encoding_pipeline: None,
+                wire_name: None,
                 form_action_url: None,
                 form_origin_url: None,
             });
@@ -1167,6 +1191,8 @@ pub async fn probe_json_body_params(
                 valid_specials: None,
                 invalid_specials: None,
                 pre_encoding: None,
+                pre_encoding_pipeline: None,
+                wire_name: None,
                 form_action_url: None,
                 form_origin_url: None,
             });

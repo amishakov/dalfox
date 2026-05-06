@@ -61,6 +61,21 @@ pub fn apply_pre_encoding(payload: &str, pre_encoding: &Option<String>) -> Strin
     }
 }
 
+/// Apply per-`Param` pre-encoding. Prefers the composable
+/// `pre_encoding_pipeline` when set; otherwise falls back to the legacy
+/// single-step `pre_encoding`. Pipeline failures (e.g. a stale JSON pointer)
+/// degrade to the raw payload so probing can still attempt an injection.
+pub fn apply_param_encoding(payload: &str, param: &crate::parameter_analysis::Param) -> String {
+    if let Some(pipeline) = &param.pre_encoding_pipeline
+        && !pipeline.is_empty()
+    {
+        return pipeline
+            .apply(payload)
+            .unwrap_or_else(|_| payload.to_string());
+    }
+    apply_pre_encoding(payload, &param.pre_encoding)
+}
+
 /// A single pre-encoding probe: the encoding type and a function that
 /// applies it to a raw payload.
 pub type EncodingProbe = (PreEncodingType, fn(&str) -> String);

@@ -127,6 +127,8 @@ pub async fn check_fragment_discovery(target: &Target, reflection_params: Arc<Mu
             valid_specials: None,
             invalid_specials: None,
             pre_encoding: None,
+            pre_encoding_pipeline: None,
+            wire_name: None,
             form_action_url: None,
             form_origin_url: None,
         });
@@ -154,6 +156,8 @@ pub async fn check_query_discovery(
             valid_specials: None,
             invalid_specials: None,
             pre_encoding: None,
+            pre_encoding_pipeline: None,
+            wire_name: None,
             form_action_url: None,
             form_origin_url: None,
         };
@@ -206,6 +210,8 @@ pub async fn check_query_discovery(
                         valid_specials: None,
                         invalid_specials: None,
                         pre_encoding: None,
+                        pre_encoding_pipeline: None,
+                        wire_name: None,
                         form_action_url: None,
                         form_origin_url: None,
                     });
@@ -221,6 +227,8 @@ pub async fn check_query_discovery(
                         valid_specials: Some(valid),
                         invalid_specials: Some(invalid),
                         pre_encoding: None,
+                        pre_encoding_pipeline: None,
+                        wire_name: None,
                         form_action_url: None,
                         form_origin_url: None,
                     });
@@ -287,10 +295,79 @@ pub async fn check_query_discovery(
                     valid_specials: None,
                     invalid_specials: None,
                     pre_encoding: Some(enc_name.to_string()),
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
                 break; // Found working encoding, no need to try more
+            }
+            if target.delay > 0 {
+                sleep(Duration::from_millis(target.delay)).await;
+            }
+        }
+    }
+
+    // Nested-pipeline probe: when a parameter's existing value decodes as
+    // base64-of-JSON, treat each leaf string field as its own injection
+    // point. The wire-level parameter name stays the parent (`qs`); each
+    // virtual sub-param carries an `EncodingPipeline` that wraps the
+    // payload back into the original structure (JSON-stringify with
+    // payload at the leaf pointer, then base64).
+    for (name, value) in target.url.query_pairs() {
+        let name = name.to_string();
+        let value = value.to_string();
+        if discovered_names.contains(&name) {
+            continue;
+        }
+        let nested = crate::encoding::pipeline::infer_nested_pipelines(&value);
+        if nested.is_empty() {
+            continue;
+        }
+        for nf in nested {
+            let display_name = if nf.path.is_empty() {
+                name.clone()
+            } else {
+                format!("{}.{}", name, nf.path.join("."))
+            };
+            // Skip if this synthetic name was already registered.
+            if discovered_names.contains(&display_name) {
+                continue;
+            }
+            let Ok(wire_value) = nf.pipeline.apply(test_value) else {
+                continue;
+            };
+            let mut url = target.url.clone();
+            url.query_pairs_mut().clear();
+            for (n, v) in target.url.query_pairs() {
+                if n.as_ref() == name.as_str() {
+                    url.query_pairs_mut().append_pair(&n, &wire_value);
+                } else {
+                    url.query_pairs_mut().append_pair(&n, &v);
+                }
+            }
+            let _permit = semaphore.acquire().await.expect("acquire semaphore permit");
+            let m = target.parse_method();
+            let request = crate::utils::build_request(&client, target, m, url, target.data.clone());
+            crate::tick_request_count();
+            if let Ok(resp) = request.send().await
+                && let Ok(text) = resp.text().await
+                && text.contains(test_value)
+            {
+                discovered_names.insert(display_name.clone());
+                batch.push(Param {
+                    name: display_name,
+                    value: nf.original_value.clone(),
+                    location: crate::parameter_analysis::Location::Query,
+                    injection_context: Some(detect_injection_context(&text)),
+                    valid_specials: None,
+                    invalid_specials: None,
+                    pre_encoding: None,
+                    pre_encoding_pipeline: Some(nf.pipeline.clone()),
+                    wire_name: Some(name.clone()),
+                    form_action_url: None,
+                    form_origin_url: None,
+                });
             }
             if target.delay > 0 {
                 sleep(Duration::from_millis(target.delay)).await;
@@ -316,6 +393,8 @@ pub async fn check_query_discovery(
                 valid_specials: None,
                 invalid_specials: None,
                 pre_encoding: None,
+                pre_encoding_pipeline: None,
+                wire_name: None,
                 form_action_url: None,
                 form_origin_url: None,
             };
@@ -343,6 +422,8 @@ pub async fn check_query_discovery(
                     valid_specials: None,
                     invalid_specials: None,
                     pre_encoding: None,
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
@@ -377,6 +458,8 @@ pub async fn check_query_discovery(
                 valid_specials: Some(valid),
                 invalid_specials: Some(invalid),
                 pre_encoding: None,
+                pre_encoding_pipeline: None,
+                wire_name: None,
                 form_action_url: None,
                 form_origin_url: None,
             });
@@ -472,6 +555,8 @@ pub async fn check_header_discovery(
                     valid_specials: Some(valid),
                     invalid_specials: Some(invalid),
                     pre_encoding: None,
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
@@ -576,6 +661,8 @@ pub async fn check_path_discovery(
                     valid_specials: Some(valid),
                     invalid_specials: Some(invalid),
                     pre_encoding: None,
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
@@ -665,6 +752,8 @@ pub async fn check_cookie_discovery(
                     valid_specials: Some(valid),
                     invalid_specials: Some(invalid),
                     pre_encoding: None,
+                    pre_encoding_pipeline: None,
+                    wire_name: None,
                     form_action_url: None,
                     form_origin_url: None,
                 });
@@ -819,6 +908,8 @@ pub async fn check_form_discovery(
                         valid_specials: Some(valid),
                         invalid_specials: Some(invalid),
                         pre_encoding: None,
+                        pre_encoding_pipeline: None,
+                        wire_name: None,
                         form_action_url: Some(form_url.to_string()),
                         form_origin_url: Some(target.url.to_string()),
                     });
@@ -886,6 +977,8 @@ pub async fn check_form_discovery(
                         valid_specials: Some(valid),
                         invalid_specials: Some(invalid),
                         pre_encoding: None,
+                        pre_encoding_pipeline: None,
+                        wire_name: None,
                         form_action_url: Some(form_url.to_string()),
                         form_origin_url: Some(target.url.to_string()),
                     });
@@ -927,6 +1020,8 @@ pub async fn check_form_discovery(
                         valid_specials: Some(valid),
                         invalid_specials: Some(invalid),
                         pre_encoding: None,
+                        pre_encoding_pipeline: None,
+                        wire_name: None,
                         form_action_url: Some(form_url.to_string()),
                         form_origin_url: Some(target.url.to_string()),
                     });
@@ -969,6 +1064,8 @@ pub async fn check_form_discovery(
                         valid_specials: Some(valid.clone()),
                         invalid_specials: Some(invalid.clone()),
                         pre_encoding: None,
+                        pre_encoding_pipeline: None,
+                        wire_name: None,
                         form_action_url: Some(form_url.to_string()),
                         form_origin_url: Some(target.url.to_string()),
                     });
@@ -1048,6 +1145,8 @@ pub async fn check_form_discovery(
                             valid_specials: Some(valid),
                             invalid_specials: Some(invalid),
                             pre_encoding: None,
+                            pre_encoding_pipeline: None,
+                            wire_name: None,
                             form_action_url: Some(target.url.to_string()),
                             form_origin_url: Some(target.url.to_string()),
                         });
@@ -1119,6 +1218,8 @@ pub async fn check_form_discovery(
                             valid_specials: Some(valid),
                             invalid_specials: Some(invalid),
                             pre_encoding: None,
+                            pre_encoding_pipeline: None,
+                            wire_name: None,
                             form_action_url: Some(target.url.to_string()),
                             form_origin_url: Some(target.url.to_string()),
                         });

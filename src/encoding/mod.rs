@@ -1,3 +1,4 @@
+pub mod pipeline;
 pub mod pre_encoding;
 
 use base64::{Engine, engine::general_purpose::STANDARD};

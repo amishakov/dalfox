@@ -277,6 +277,8 @@ async fn test_check_path_discovery_skips_existing_segment() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     }]));

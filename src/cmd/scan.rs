@@ -1682,6 +1682,8 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                                 valid_specials: None,
                                 invalid_specials: None,
                                 pre_encoding: None,
+                                pre_encoding_pipeline: None,
+                                wire_name: None,
                                 form_action_url: None,
                                 form_origin_url: None,
                             });
@@ -1704,6 +1706,8 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                                             valid_specials: None,
                                             invalid_specials: None,
                                             pre_encoding: None,
+                                            pre_encoding_pipeline: None,
+                                            wire_name: None,
                                             form_action_url: None,
                                             form_origin_url: None,
                                         });
@@ -1723,6 +1727,8 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                                         valid_specials: None,
                                         invalid_specials: None,
                                         pre_encoding: None,
+                                        pre_encoding_pipeline: None,
+                                        wire_name: None,
                                         form_action_url: None,
                                         form_origin_url: None,
                                     });
@@ -1742,6 +1748,8 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                                 valid_specials: None,
                                 invalid_specials: None,
                                 pre_encoding: None,
+                                pre_encoding_pipeline: None,
+                                wire_name: None,
                                 form_action_url: None,
                                 form_origin_url: None,
                             });
@@ -1759,6 +1767,8 @@ pub async fn run_scan(args: &ScanArgs) -> ScanOutcome {
                                 valid_specials: None,
                                 invalid_specials: None,
                                 pre_encoding: None,
+                                pre_encoding_pipeline: None,
+                                wire_name: None,
                                 form_action_url: None,
                                 form_origin_url: None,
                             });

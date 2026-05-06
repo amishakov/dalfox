@@ -339,6 +339,28 @@ async fn safe_static() -> impl IntoResponse {
     Html(r#"<!DOCTYPE html><html><body><p>Hello, world!</p></body></html>"#.to_string())
 }
 
+/// Mirrors the shape of the unfixed kakaoinvestment endpoint:
+/// `?qs=BASE64({"move_url":"...","acc_domain":"...","auth_domain":"..."})`
+/// where the server decodes/parses the JSON and reflects the `move_url`
+/// field verbatim into the HTML response. Both legacy single-step base64
+/// pre-encoding and a plain-string `qs` fail the reflection check; only
+/// the nested-pipeline probe should discover this parameter.
+async fn vuln_b64_json_field(Query(p): Query<HashMap<String, String>>) -> impl IntoResponse {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let qs = p.get("qs").cloned().unwrap_or_default();
+    let move_url = STANDARD
+        .decode(&qs)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("move_url").and_then(|m| m.as_str()).map(String::from))
+        .unwrap_or_default();
+    Html(format!(
+        r#"<!DOCTYPE html><html><head><title>Auth</title></head>
+<body><p>Redirecting to: {move_url}</p></body></html>"#
+    ))
+}
+
 // ===========================================================================
 // Test server setup
 // ===========================================================================
@@ -379,6 +401,8 @@ async fn start_test_server() -> SocketAddr {
         .route("/dom/eval", get(vuln_dom_eval))
         // Multi-param
         .route("/multi", get(vuln_multi_param))
+        // Nested encoding: base64-of-JSON with leaf-field reflection
+        .route("/auth/authentication.cm", get(vuln_b64_json_field))
         // Safe / negative
         .route("/safe/stripped", get(safe_stripped))
         .route("/safe/truncated", get(safe_truncated))
@@ -848,5 +872,44 @@ async fn test_safe_static_no_fp() {
     assert_not_detected(
         &run_scan_and_collect(args).await,
         "static page, no reflection",
+    );
+}
+
+// ===========================================================================
+// Tests — Nested encoding (base64-of-JSON with leaf field reflection)
+// ===========================================================================
+
+/// Mirrors the unfixed kakaoinvestment auth/authentication.cm shape:
+/// `?qs=BASE64({"move_url":"...", ...})` reflects the `move_url` value into
+/// HTML. Plain and single-step base64 probes both miss this — discovery has
+/// to peek inside the parameter value, recognise the JSON structure, and
+/// register `qs.move_url` as a virtual sub-parameter with a composable
+/// `JsonField → Base64` pre-encoding pipeline.
+#[tokio::test]
+async fn test_nested_b64_json_field_xss() {
+    let addr = start_test_server().await;
+    // Base64-encoded JSON identical in shape to the real-world payload.
+    let qs_value = "eyJtb3ZlX3VybCI6ICJhcyIsICJhY2NfZG9tYWluIjogImtha2FvaW52ZXN0bWVudC5jb20iLCAiYXV0aF9kb21haW4iOiAiZW4ua2FrYW9pbnZlc3RtZW50LmNvbSJ9";
+    let mut args = base_scan_args();
+    args.targets = vec![format!(
+        "http://{addr}/auth/authentication.cm?qs={qs_value}"
+    )];
+    let findings = run_scan_and_collect(args).await;
+    assert_detected(&findings, "nested b64-of-JSON: qs.move_url");
+    // The synthetic sub-param name should appear so reports can point at the
+    // exact JSON field that was exploitable.
+    let any_move_url = findings.iter().any(|f| {
+        f["param"]
+            .as_str()
+            .map(|p| p.contains("move_url"))
+            .unwrap_or(false)
+    });
+    assert!(
+        any_move_url,
+        "expected at least one finding to name `move_url`; got params: {:?}",
+        findings
+            .iter()
+            .map(|f| f["param"].as_str().unwrap_or(""))
+            .collect::<Vec<_>>()
     );
 }

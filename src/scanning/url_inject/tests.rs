@@ -16,6 +16,8 @@ fn test_query_injection_replace() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -35,6 +37,8 @@ fn test_query_injection_append() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -53,6 +57,8 @@ fn test_query_injection_preserves_existing_percent_encoding() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -72,6 +78,8 @@ fn test_query_injection_encodes_raw_spaces_without_plus() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -90,6 +98,8 @@ fn test_path_injection_basic() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -109,6 +119,8 @@ fn test_path_injection_index_out_of_bounds() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -127,6 +139,8 @@ fn test_non_target_location_passthrough() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -145,6 +159,8 @@ fn test_fragment_injection_spa_route() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -163,6 +179,8 @@ fn test_fragment_injection_simple_kv() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -181,6 +199,8 @@ fn test_fragment_injection_append_when_absent() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -202,6 +222,8 @@ fn test_fragment_injection_no_existing_fragment() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -220,6 +242,8 @@ fn test_fragment_injection_multiple_params() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -240,6 +264,8 @@ fn test_hpp_last_position() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -259,6 +285,8 @@ fn test_hpp_first_position() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -278,6 +306,8 @@ fn test_hpp_both_position() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -296,6 +326,8 @@ fn test_hpp_non_query_returns_none() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -313,6 +345,8 @@ fn test_hpp_absent_param_appended() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -332,6 +366,8 @@ fn test_hpp_preserves_fragment() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -350,6 +386,8 @@ fn test_build_hpp_urls_returns_3_variants() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };

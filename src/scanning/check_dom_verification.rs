@@ -615,8 +615,7 @@ pub async fn check_dom_verification_with_client(
     // Use encoded_payload for building the HTTP request, but keep `payload`
     // (the raw/original payload) for response body analysis — the server
     // decodes the encoding and reflects the raw content.
-    let encoded_payload =
-        crate::encoding::pre_encoding::apply_pre_encoding(payload, &param.pre_encoding);
+    let encoded_payload = crate::encoding::pre_encoding::apply_param_encoding(payload, param);
 
     let inject_request = build_inject_request(client, target, param, &encoded_payload);
 

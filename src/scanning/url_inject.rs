@@ -133,7 +133,7 @@ pub fn build_injected_url(base: &url::Url, param: &Param, injected: &str) -> Str
                     first = false;
                     encode_query_component_preserving_pct_into(&k, &mut result);
                     result.push('=');
-                    if k == param.name && !found {
+                    if k == param.effective_wire_name() && !found {
                         encode_query_component_preserving_pct_into(injected, &mut result);
                         found = true;
                     } else {
@@ -144,7 +144,10 @@ pub fn build_injected_url(base: &url::Url, param: &Param, injected: &str) -> Str
                     if !first {
                         result.push('&');
                     }
-                    encode_query_component_preserving_pct_into(&param.name, &mut result);
+                    encode_query_component_preserving_pct_into(
+                        param.effective_wire_name(),
+                        &mut result,
+                    );
                     result.push('=');
                     encode_query_component_preserving_pct_into(injected, &mut result);
                 }

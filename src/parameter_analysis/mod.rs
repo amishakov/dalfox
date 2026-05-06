@@ -89,12 +89,32 @@ pub struct Param {
     /// checked against the original (decoded) payload.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pre_encoding: Option<String>,
+    /// Composable pre-encoding pipeline. Takes precedence over `pre_encoding`
+    /// when present. Used for nested encodings that the legacy single-step
+    /// field cannot express, e.g. `JsonField{pointer:"/move_url"} → Base64`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_encoding_pipeline: Option<crate::encoding::pipeline::EncodingPipeline>,
+    /// HTTP-layer parameter name used when the payload must be inserted at a
+    /// different name than this `Param.name`. Set when `name` is a synthetic
+    /// nested-field display label (e.g. `qs.move_url`) but the wire-level
+    /// substitution targets the parent parameter (`qs`). When `None`, callers
+    /// fall back to `name`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire_name: Option<String>,
     /// POST target URL resolved from form action attribute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub form_action_url: Option<String>,
     /// Page URL where the form was discovered (for stored XSS verification).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub form_origin_url: Option<String>,
+}
+
+impl Param {
+    /// HTTP-level parameter name (parent param when this is a nested-field
+    /// virtual param, otherwise `name`).
+    pub fn effective_wire_name(&self) -> &str {
+        self.wire_name.as_deref().unwrap_or(&self.name)
+    }
 }
 
 /// Set of special characters to probe with patterns like: dalfox'<char>dlafox"
@@ -409,6 +429,8 @@ pub async fn active_probe_param(
                             valid_specials: None,
                             invalid_specials: None,
                             pre_encoding: None,
+                            pre_encoding_pipeline: None,
+                            wire_name: None,
                             form_action_url: None,
                             form_origin_url: None,
                         },

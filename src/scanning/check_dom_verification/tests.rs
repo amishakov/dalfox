@@ -27,6 +27,8 @@ fn make_param() -> Param {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     }
@@ -341,6 +343,8 @@ async fn test_check_dom_verification_injects_header_params() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -371,6 +375,8 @@ async fn test_check_dom_verification_injects_cookie_params() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -403,6 +409,8 @@ async fn test_check_dom_verification_injects_form_body_params() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -436,6 +444,8 @@ async fn test_check_dom_verification_injects_json_body_params() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };

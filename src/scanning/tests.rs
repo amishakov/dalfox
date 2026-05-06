@@ -131,6 +131,8 @@ fn mock_add_reflection_param(target: &mut Target, name: &str, location: Location
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     });
@@ -216,6 +218,8 @@ fn test_get_dom_payloads_javascript_context_returns_breakout_payloads() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -241,6 +245,8 @@ fn test_get_dom_payloads_html_context_includes_encoded_variants() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -262,6 +268,8 @@ fn test_get_dom_payloads_unknown_context_falls_back_even_with_only_custom() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -324,6 +332,8 @@ fn test_build_request_text_query_contains_headers_and_cookies() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -348,6 +358,8 @@ fn test_build_request_text_path_segment_injection() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     };
@@ -551,6 +563,8 @@ async fn test_run_scanning_with_reflection_params() {
         valid_specials: None,
         invalid_specials: None,
         pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
         form_action_url: None,
         form_origin_url: None,
     });
