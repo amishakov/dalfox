@@ -58,7 +58,7 @@ const SENTINEL_QUERY_NAMES: &[&str] = &[
 /// sentinel fails to reflect — `None` is the "this page is fine, run the
 /// wordlist normally" signal.
 async fn pre_collapse_query_probe(client: &reqwest::Client, target: &Target) -> Option<String> {
-    let marker = crate::scanning::markers::open_marker();
+    let marker = crate::scanning::markers::bracketed_marker();
     let mut first_text: Option<String> = None;
     for name in SENTINEL_QUERY_NAMES.iter().take(SENTINEL_PROBE_COUNT) {
         let mut url = target.url.clone();
@@ -98,7 +98,7 @@ fn make_any_query_param(text: &str) -> Param {
     let (valid, invalid) = crate::parameter_analysis::classify_special_chars(text);
     Param {
         name: "any".to_string(),
-        value: crate::scanning::markers::open_marker().to_string(),
+        value: crate::scanning::markers::bracketed_marker().to_string(),
         location: Location::Query,
         injection_context: Some(context),
         valid_specials: Some(valid),
@@ -173,8 +173,17 @@ impl MiningSampleStats {
 }
 
 pub fn detect_injection_context(text: &str) -> InjectionContext {
-    let marker = crate::scanning::markers::open_marker();
-    detect_injection_context_with_marker(text, marker)
+    // Inner marker survives every reflection form classified by
+    // `classify_probe_reflection` (Full / PrefixOnly / SuffixOnly /
+    // InnerOnly), so it's the most reliable anchor for context inference
+    // on bracketed probes. Fall back to the open marker for callers that
+    // still inject it directly (older tests, legacy probe sites).
+    let inner = crate::scanning::markers::inner_marker();
+    if text.contains(inner) {
+        return detect_injection_context_with_marker(text, inner);
+    }
+    let open = crate::scanning::markers::open_marker();
+    detect_injection_context_with_marker(text, open)
 }
 
 /// Like `detect_injection_context` but uses a caller-supplied marker string.
@@ -422,7 +431,7 @@ pub async fn probe_dictionary_params(
 
             let mut url = target.url.clone();
             url.query_pairs_mut()
-                .append_pair(param, crate::scanning::markers::open_marker());
+                .append_pair(param, crate::scanning::markers::bracketed_marker());
 
             let client_clone = client.clone();
 
@@ -475,7 +484,9 @@ pub async fn probe_dictionary_params(
                         r.headers()
                             .get("location")
                             .and_then(|v| v.to_str().ok())
-                            .map(|loc| loc.contains(crate::scanning::markers::open_marker()))
+                            .map(|loc| {
+                                crate::scanning::markers::classify_probe_reflection(loc).detected()
+                            })
                             .unwrap_or(false)
                     } else {
                         false
@@ -489,7 +500,7 @@ pub async fn probe_dictionary_params(
                         if !st.collapsed {
                             discovered = Some(Param {
                                 name: param_name.clone(),
-                                value: crate::scanning::markers::open_marker().to_string(),
+                                value: crate::scanning::markers::bracketed_marker().to_string(),
                                 location: crate::parameter_analysis::Location::Query,
                                 injection_context: Some(
                                     crate::parameter_analysis::InjectionContext::AttributeUrl(None),
@@ -521,7 +532,7 @@ pub async fn probe_dictionary_params(
                     } else if let Ok(text) = r.text().await {
                         let mut st = stats_clone.lock().await;
                         st.record_attempt();
-                        if text.contains(crate::scanning::markers::open_marker()) {
+                        if crate::scanning::markers::classify_probe_reflection(&text).detected() {
                             st.record_reflection();
                             if !st.collapsed {
                                 let context = detect_injection_context(&text);
@@ -529,7 +540,7 @@ pub async fn probe_dictionary_params(
                                     crate::parameter_analysis::classify_special_chars(&text);
                                 discovered = Some(Param {
                                     name: param_name.clone(),
-                                    value: crate::scanning::markers::open_marker().to_string(),
+                                    value: crate::scanning::markers::bracketed_marker().to_string(),
                                     location: crate::parameter_analysis::Location::Query,
                                     injection_context: Some(context),
                                     valid_specials: Some(valid),
@@ -626,7 +637,7 @@ pub async fn probe_dictionary_params(
         } else {
             guard.push(Param {
                 name: "any".to_string(),
-                value: crate::scanning::markers::open_marker().to_string(),
+                value: crate::scanning::markers::bracketed_marker().to_string(),
                 location: crate::parameter_analysis::Location::Query,
                 injection_context: Some(crate::parameter_analysis::InjectionContext::Html(None)),
                 valid_specials: None,
@@ -691,7 +702,7 @@ pub async fn probe_body_params(
             let new_data = form_urlencoded::parse(data.as_bytes())
                 .map(|(k, v)| {
                     if k == param_name {
-                        (k, crate::scanning::markers::open_marker().to_string())
+                        (k, crate::scanning::markers::bracketed_marker().to_string())
                     } else {
                         (k, v.to_string())
                     }
@@ -735,7 +746,7 @@ pub async fn probe_body_params(
                 {
                     let mut st = stats_clone.lock().await;
                     st.record_attempt();
-                    if text.contains(crate::scanning::markers::open_marker()) {
+                    if crate::scanning::markers::classify_probe_reflection(&text).detected() {
                         st.record_reflection();
                         if !st.collapsed {
                             let context = detect_injection_context(&text);
@@ -743,7 +754,7 @@ pub async fn probe_body_params(
                                 crate::parameter_analysis::classify_special_chars(&text);
                             discovered = Some(Param {
                                 name: param_name_cloned.clone(),
-                                value: crate::scanning::markers::open_marker().to_string(),
+                                value: crate::scanning::markers::bracketed_marker().to_string(),
                                 location: Location::Body,
                                 injection_context: Some(context),
                                 valid_specials: Some(valid),
@@ -835,7 +846,7 @@ pub async fn probe_body_params(
             } else {
                 guard.push(Param {
                     name: "any".to_string(),
-                    value: crate::scanning::markers::open_marker().to_string(),
+                    value: crate::scanning::markers::bracketed_marker().to_string(),
                     location: Location::Body,
                     injection_context: Some(crate::parameter_analysis::InjectionContext::Html(
                         None,
@@ -946,7 +957,7 @@ pub async fn probe_response_id_params(
             }
             let mut url = target.url.clone();
             url.query_pairs_mut()
-                .append_pair(&param, crate::scanning::markers::open_marker());
+                .append_pair(&param, crate::scanning::markers::bracketed_marker());
             let client_clone = client.clone();
 
             let data = target.data.clone();
@@ -987,7 +998,7 @@ pub async fn probe_response_id_params(
                     if let Ok(text) = resp.text().await {
                         let mut st = stats_clone.lock().await;
                         st.record_attempt();
-                        if text.contains(crate::scanning::markers::open_marker()) {
+                        if crate::scanning::markers::classify_probe_reflection(&text).detected() {
                             st.record_reflection();
                             if !st.collapsed {
                                 let context = detect_injection_context(&text);
@@ -996,7 +1007,7 @@ pub async fn probe_response_id_params(
                                 // Store discovered Param for return (batched later)
                                 discovered = Some(Param {
                                     name: param.clone(),
-                                    value: crate::scanning::markers::open_marker().to_string(),
+                                    value: crate::scanning::markers::bracketed_marker().to_string(),
                                     location: crate::parameter_analysis::Location::Query,
                                     injection_context: Some(context),
                                     valid_specials: Some(valid),
@@ -1087,7 +1098,7 @@ pub async fn probe_response_id_params(
             } else {
                 guard.push(Param {
                     name: "any".to_string(),
-                    value: crate::scanning::markers::open_marker().to_string(),
+                    value: crate::scanning::markers::bracketed_marker().to_string(),
                     location: crate::parameter_analysis::Location::Query,
                     injection_context: Some(crate::parameter_analysis::InjectionContext::Html(
                         None,
@@ -1186,13 +1197,17 @@ pub async fn probe_json_body_params(
             if let Some(map) = root.as_object_mut() {
                 map.insert(
                     param_name_cloned.clone(),
-                    serde_json::Value::String(crate::scanning::markers::open_marker().to_string()),
+                    serde_json::Value::String(
+                        crate::scanning::markers::bracketed_marker().to_string(),
+                    ),
                 );
             } else {
                 let mut map = serde_json::Map::new();
                 map.insert(
                     param_name_cloned.clone(),
-                    serde_json::Value::String(crate::scanning::markers::open_marker().to_string()),
+                    serde_json::Value::String(
+                        crate::scanning::markers::bracketed_marker().to_string(),
+                    ),
                 );
                 root = serde_json::Value::Object(map);
             }
@@ -1200,7 +1215,7 @@ pub async fn probe_json_body_params(
                 format!(
                     "{{\"{}\":\"{}\"}}",
                     param_name_cloned,
-                    crate::scanning::markers::open_marker()
+                    crate::scanning::markers::bracketed_marker()
                 )
             });
 
@@ -1223,7 +1238,7 @@ pub async fn probe_json_body_params(
             {
                 let mut st = stats_clone.lock().await;
                 st.record_attempt();
-                if text.contains(crate::scanning::markers::open_marker()) {
+                if crate::scanning::markers::classify_probe_reflection(&text).detected() {
                     st.record_reflection();
                     if !st.collapsed {
                         let context = detect_injection_context(&text);
@@ -1231,7 +1246,7 @@ pub async fn probe_json_body_params(
                             crate::parameter_analysis::classify_special_chars(&text);
                         discovered = Some(Param {
                             name: param_name_cloned.clone(),
-                            value: crate::scanning::markers::open_marker().to_string(),
+                            value: crate::scanning::markers::bracketed_marker().to_string(),
                             location: Location::JsonBody,
                             injection_context: Some(context),
                             valid_specials: Some(valid),
@@ -1323,7 +1338,7 @@ pub async fn probe_json_body_params(
         } else {
             guard.push(Param {
                 name: "any".to_string(),
-                value: crate::scanning::markers::open_marker().to_string(),
+                value: crate::scanning::markers::bracketed_marker().to_string(),
                 location: Location::JsonBody,
                 injection_context: Some(crate::parameter_analysis::InjectionContext::Html(None)),
                 valid_specials: None,

@@ -599,9 +599,12 @@ pub async fn run_scanning(
             let mut dom_found_locally = false;
             let client = shared_client_clone.as_ref();
 
-            // Stage 0: fast probe to avoid large payload blasts on non-reflective params
-            // Use a minimal alphanumeric token to check generic reflection across contexts.
-            let probe_payloads: [&str; 1] = [crate::scanning::markers::open_marker()]; // small, context-agnostic
+            // Stage 0: fast probe to avoid large payload blasts on non-reflective params.
+            // Sandwich probe (OPEN+INNER+CLOSE) so the response check picks up
+            // partial reflections (PrefixOnly / SuffixOnly / InnerOnly) where a
+            // server-side filter strips a prefix or suffix off the input before
+            // echoing — those cases would slip past a single-token contains().
+            let probe_payloads: [&str; 1] = [crate::scanning::markers::bracketed_marker()];
             let mut probe_reflected = false;
             let mut probe_response_text: Option<String> = None;
             for pp in probe_payloads {
@@ -622,7 +625,7 @@ pub async fn run_scanning(
                     // check if the probe marker actually appears in the response.
                     // This ensures breakout payloads get a chance to be tried
                     // for params reflected inside safe tags (title, textarea, etc.).
-                    if text.contains(pp) {
+                    if crate::scanning::markers::classify_probe_reflection(text).detected() {
                         probe_reflected = true;
                         probe_response_text = response_text;
                         break;

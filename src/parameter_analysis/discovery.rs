@@ -142,7 +142,7 @@ pub async fn check_query_discovery(
 ) {
     let arc_target = Arc::new(target.clone());
     let client = target.build_client_or_default();
-    let test_value = crate::scanning::markers::open_marker();
+    let test_value = crate::scanning::markers::bracketed_marker();
 
     let mut handles = vec![];
 
@@ -191,7 +191,9 @@ pub async fn check_query_discovery(
                     resp.headers()
                         .get("location")
                         .and_then(|v| v.to_str().ok())
-                        .map(|loc| loc.contains(test_value))
+                        .map(|loc| {
+                            crate::scanning::markers::classify_probe_reflection(loc).detected()
+                        })
                         .unwrap_or(false)
                 } else {
                     false
@@ -216,7 +218,7 @@ pub async fn check_query_discovery(
                         form_origin_url: None,
                     });
                 } else if let Ok(text) = resp.text().await
-                    && text.contains(test_value)
+                    && crate::scanning::markers::classify_probe_reflection(&text).detected()
                 {
                     let (valid, invalid) = classify_special_chars(&text);
                     discovered = Some(Param {
@@ -280,7 +282,7 @@ pub async fn check_query_discovery(
             crate::tick_request_count();
             if let Ok(resp) = request.send().await
                 && let Ok(text) = resp.text().await
-                && text.contains(test_value)
+                && crate::scanning::markers::classify_probe_reflection(&text).detected()
             {
                 // For pre-encoded params (base64/2base64), skip special char
                 // classification. The encoding bypasses HTTP-level filtering,
@@ -361,7 +363,7 @@ pub async fn check_query_discovery(
             crate::tick_request_count();
             if let Ok(resp) = request.send().await
                 && let Ok(text) = resp.text().await
-                && text.contains(test_value)
+                && crate::scanning::markers::classify_probe_reflection(&text).detected()
             {
                 discovered_names.insert(display_name.clone());
                 batch.push(Param {
@@ -456,7 +458,7 @@ pub async fn check_query_discovery(
         crate::tick_request_count();
         if let Ok(resp) = request.send().await
             && let Ok(text) = resp.text().await
-            && text.contains(test_value)
+            && crate::scanning::markers::classify_probe_reflection(&text).detected()
         {
             let (valid, invalid) = classify_special_chars(&text);
             batch.push(Param {
@@ -507,7 +509,7 @@ pub async fn check_header_discovery(
 ) {
     let arc_target = Arc::new(target.clone());
     let client = target.build_client_or_default();
-    let test_value = crate::scanning::markers::open_marker();
+    let test_value = crate::scanning::markers::bracketed_marker();
 
     let mut handles = vec![];
 
@@ -553,7 +555,7 @@ pub async fn check_header_discovery(
             let mut discovered: Option<Param> = None;
             if let Ok(resp) = request.send().await
                 && let Ok(text) = resp.text().await
-                && text.contains(test_value)
+                && crate::scanning::markers::classify_probe_reflection(&text).detected()
             {
                 let (valid, invalid) = classify_special_chars(&text);
                 discovered = Some(Param {
@@ -601,7 +603,7 @@ pub async fn check_path_discovery(
     semaphore: Arc<Semaphore>,
 ) {
     let arc_target = Arc::new(target.clone());
-    let test_value = crate::scanning::markers::open_marker();
+    let test_value = crate::scanning::markers::bracketed_marker();
     let path = target.url.path();
     // Split non-empty segments
     let segments: Vec<&str> = path
@@ -659,7 +661,7 @@ pub async fn check_path_discovery(
             let mut discovered: Option<Param> = None;
             if let Ok(resp) = request.send().await
                 && let Ok(text) = resp.text().await
-                && text.contains(test_value)
+                && crate::scanning::markers::classify_probe_reflection(&text).detected()
             {
                 let (valid, invalid) = classify_special_chars(&text);
                 discovered = Some(Param {
@@ -708,7 +710,7 @@ pub async fn check_cookie_discovery(
 ) {
     let arc_target = Arc::new(target.clone());
     let client = target.build_client_or_default();
-    let test_value = crate::scanning::markers::open_marker();
+    let test_value = crate::scanning::markers::bracketed_marker();
 
     let mut handles = vec![];
 
@@ -750,7 +752,7 @@ pub async fn check_cookie_discovery(
             let mut discovered: Option<Param> = None;
             if let Ok(resp) = request.send().await
                 && let Ok(text) = resp.text().await
-                && text.contains(test_value)
+                && crate::scanning::markers::classify_probe_reflection(&text).detected()
             {
                 let (valid, invalid) = classify_special_chars(&text);
                 discovered = Some(Param {
@@ -803,7 +805,7 @@ pub async fn check_form_discovery(
     }
 
     let client = target.build_client_or_default();
-    let test_value = crate::scanning::markers::open_marker();
+    let test_value = crate::scanning::markers::bracketed_marker();
 
     // Fetch the page via GET to find forms
     let method = reqwest::Method::GET;
@@ -906,7 +908,7 @@ pub async fn check_form_discovery(
                 crate::tick_request_count();
                 if let Ok(resp) = rb.send().await
                     && let Ok(text) = resp.text().await
-                    && text.contains(test_value)
+                    && crate::scanning::markers::classify_probe_reflection(&text).detected()
                 {
                     let (valid, invalid) = classify_special_chars(&text);
                     batch.push(Param {
@@ -975,7 +977,7 @@ pub async fn check_form_discovery(
                 crate::tick_request_count();
                 if let Ok(resp) = rb.send().await
                     && let Ok(text) = resp.text().await
-                    && text.contains(test_value)
+                    && crate::scanning::markers::classify_probe_reflection(&text).detected()
                 {
                     let (valid, invalid) = classify_special_chars(&text);
                     batch.push(Param {
@@ -1018,7 +1020,7 @@ pub async fn check_form_discovery(
                 crate::tick_request_count();
                 if let Ok(resp) = rb.send().await
                     && let Ok(text) = resp.text().await
-                    && text.contains(test_value)
+                    && crate::scanning::markers::classify_probe_reflection(&text).detected()
                 {
                     let (valid, invalid) = classify_special_chars(&text);
                     batch.push(Param {
@@ -1061,7 +1063,7 @@ pub async fn check_form_discovery(
             crate::tick_request_count();
             if let Ok(resp) = rb.send().await
                 && let Ok(text) = resp.text().await
-                && text.contains(test_value)
+                && crate::scanning::markers::classify_probe_reflection(&text).detected()
             {
                 let (valid, invalid) = classify_special_chars(&text);
                 for (field_name, field_value) in &fields {
@@ -1143,7 +1145,7 @@ pub async fn check_form_discovery(
                     crate::tick_request_count();
                     if let Ok(resp) = rb.send().await
                         && let Ok(text) = resp.text().await
-                        && text.contains(test_value)
+                        && crate::scanning::markers::classify_probe_reflection(&text).detected()
                     {
                         let (valid, invalid) = classify_special_chars(&text);
                         batch.push(Param {
@@ -1216,7 +1218,7 @@ pub async fn check_form_discovery(
                     crate::tick_request_count();
                     if let Ok(resp) = rb.send().await
                         && let Ok(text) = resp.text().await
-                        && text.contains(test_value)
+                        && crate::scanning::markers::classify_probe_reflection(&text).detected()
                     {
                         let (valid, invalid) = classify_special_chars(&text);
                         batch.push(Param {

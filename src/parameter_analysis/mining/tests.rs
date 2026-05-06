@@ -284,6 +284,6 @@ async fn test_probe_response_id_params_discovers_reflected_input_name() {
     assert!(params.iter().any(|p| {
         p.name == "search"
             && p.location == Location::Query
-            && p.value == crate::scanning::markers::open_marker()
+            && p.value == crate::scanning::markers::bracketed_marker()
     }));
 }

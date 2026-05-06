@@ -334,6 +334,62 @@ async fn safe_truncated(Query(p): Query<HashMap<String, String>>) -> impl IntoRe
     ))
 }
 
+/// Strip the first 4 characters of every query value before reflecting.
+/// Without bracketed-marker probing, Stage 0 would inject `dlx<8hex>` (11
+/// chars), the server would echo only `<8hex>`, and the legacy
+/// `text.contains(open_marker())` check would miss it. With the sandwich
+/// probe (OPEN+INNER+CLOSE), the server still strips the first 4 bytes of
+/// OPEN — but INNER and CLOSE survive, so `classify_probe_reflection`
+/// reports `SuffixOnly` and the param is recorded.
+async fn vuln_strip_prefix4(Query(p): Query<HashMap<String, String>>) -> impl IntoResponse {
+    let q = p.get("q").cloned().unwrap_or_default();
+    let trimmed: String = q.chars().skip(4).collect();
+    Html(format!(
+        r#"<!DOCTYPE html><html><body><p>Echo: {trimmed}</p></body></html>"#
+    ))
+}
+
+/// Strip the last 4 characters of every query value before reflecting —
+/// mirror of `vuln_strip_prefix4`. With the sandwich probe, OPEN and
+/// INNER survive while the trailing 4 bytes of CLOSE are removed, so
+/// `classify_probe_reflection` reports `PrefixOnly`.
+async fn vuln_strip_suffix4(Query(p): Query<HashMap<String, String>>) -> impl IntoResponse {
+    let q = p.get("q").cloned().unwrap_or_default();
+    let kept_chars = q.chars().count().saturating_sub(4);
+    let trimmed: String = q.chars().take(kept_chars).collect();
+    Html(format!(
+        r#"<!DOCTYPE html><html><body><p>Echo: {trimmed}</p></body></html>"#
+    ))
+}
+
+/// Extract a hex-only run from the input via regex `[0-9a-f]+` — drops
+/// the `dlx`/`xld` prefixes/suffixes and `dlxmid` separator alike,
+/// surfacing only the inner hex segments. The bracketed probe surfaces
+/// at least the inner marker as a contiguous hex run, which the
+/// classifier reports as `InnerOnly`.
+async fn vuln_extract_hex(Query(p): Query<HashMap<String, String>>) -> impl IntoResponse {
+    let q = p.get("q").cloned().unwrap_or_default();
+    // Naive hex extractor: keep the longest run of [0-9a-f].
+    let mut best = String::new();
+    let mut current = String::new();
+    for c in q.chars() {
+        if c.is_ascii_hexdigit() {
+            current.push(c);
+        } else {
+            if current.len() > best.len() {
+                best = current.clone();
+            }
+            current.clear();
+        }
+    }
+    if current.len() > best.len() {
+        best = current;
+    }
+    Html(format!(
+        r#"<!DOCTYPE html><html><body><p>Hex: {best}</p></body></html>"#
+    ))
+}
+
 /// Static page — no reflection at all
 async fn safe_static() -> impl IntoResponse {
     Html(r#"<!DOCTYPE html><html><body><p>Hello, world!</p></body></html>"#.to_string())
@@ -441,6 +497,10 @@ async fn start_test_server() -> SocketAddr {
         .route("/dom/eval", get(vuln_dom_eval))
         // Multi-param
         .route("/multi", get(vuln_multi_param))
+        // Partial reflection: prefix/suffix strip and regex extract
+        .route("/strip/prefix4", get(vuln_strip_prefix4))
+        .route("/strip/suffix4", get(vuln_strip_suffix4))
+        .route("/extract/hex", get(vuln_extract_hex))
         // Nested encoding: base64-of-JSON with leaf-field reflection
         .route("/auth/authentication.cm", get(vuln_b64_json_field))
         // Nested encoding: JWT (unverified signature) with payload-field reflection
@@ -513,6 +573,28 @@ async fn run_scan_and_collect(mut args: ScanArgs) -> Vec<serde_json::Value> {
 
     // JSON output is now wrapped: {"meta": {...}, "findings": [...]}
     v["findings"].as_array().cloned().unwrap_or_default()
+}
+
+/// Like `run_scan_and_collect` but also resets and reads `REQUEST_COUNT`
+/// so callers can assert that the scan actually progressed past the
+/// early no-reflection short-circuit (~10 requests).
+async fn run_scan_and_count(mut args: ScanArgs) -> (Vec<serde_json::Value>, u64) {
+    use std::sync::atomic::Ordering as AtomicOrdering;
+    let id = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let out_path = std::env::temp_dir().join(format!("dalfox_scan_count_{id}.json"));
+    args.output = Some(out_path.to_string_lossy().to_string());
+
+    dalfox::REQUEST_COUNT.store(0, AtomicOrdering::Relaxed);
+    scan::run_scan(&args).await;
+    let count = dalfox::REQUEST_COUNT.load(AtomicOrdering::Relaxed);
+
+    let findings = std::fs::read_to_string(&out_path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+        .and_then(|v| v["findings"].as_array().cloned())
+        .unwrap_or_default();
+    let _ = std::fs::remove_file(&out_path);
+    (findings, count)
 }
 
 /// Assert at least one finding exists, with a descriptive label on failure.
@@ -1023,4 +1105,72 @@ async fn test_nested_url_encoded_json_xss() {
             .collect::<Vec<_>>()
     );
     assert_has_type(&findings, "V", "URL-encoded JSON: expected DOM-verified");
+}
+
+// ===========================================================================
+// Tests — Partial reflection (prefix-strip / suffix-strip / regex extract)
+// ===========================================================================
+//
+// These servers strip parts of the input before echoing it. Real XSS
+// payloads rarely survive such strips intact, so R/V findings may not
+// fire — the goal here is to verify that *discovery* still recognises
+// the param as reflected so downstream stages get a chance to try.
+// We assert that the request count exceeds the non-reflected-param
+// short-circuit baseline (~10 requests) as proxy for "Stage 5+ ran".
+
+const PARTIAL_REFLECTION_BASELINE_REQUESTS: u64 = 20;
+
+/// Server strips the first 4 chars before echoing. The legacy
+/// single-token probe (open_marker only) would lose its `dlx` prefix
+/// and the `text.contains(open_marker())` check would miss reflection.
+/// The bracketed sandwich probe survives as `inner+close` (SuffixOnly),
+/// so discovery still records the param and the scan proceeds.
+#[tokio::test]
+async fn test_partial_reflection_prefix_strip() {
+    let addr = start_test_server().await;
+    let mut args = base_scan_args();
+    args.targets = vec![format!("http://{addr}/strip/prefix4?q=test")];
+    let (_findings, count) = run_scan_and_count(args).await;
+    assert!(
+        count > PARTIAL_REFLECTION_BASELINE_REQUESTS,
+        "[prefix-strip] expected scan to progress past the no-reflection \
+         short-circuit (>{} requests), got {}",
+        PARTIAL_REFLECTION_BASELINE_REQUESTS,
+        count
+    );
+}
+
+/// Mirror of the above: trailing 4 chars stripped. The bracketed probe
+/// survives as `open+inner` (PrefixOnly).
+#[tokio::test]
+async fn test_partial_reflection_suffix_strip() {
+    let addr = start_test_server().await;
+    let mut args = base_scan_args();
+    args.targets = vec![format!("http://{addr}/strip/suffix4?q=test")];
+    let (_findings, count) = run_scan_and_count(args).await;
+    assert!(
+        count > PARTIAL_REFLECTION_BASELINE_REQUESTS,
+        "[suffix-strip] expected >{} requests, got {}",
+        PARTIAL_REFLECTION_BASELINE_REQUESTS,
+        count
+    );
+}
+
+/// Server extracts a hex-only substring — drops every non-hex byte.
+/// `dlx` / `xld` / `dlxmid` non-hex letters are stripped, but the
+/// random hex segments survive concatenated. `inner_marker()` is
+/// `dlxmid<8hex>`, whose 8-hex tail survives as a contiguous run and
+/// is detected by `classify_probe_reflection`'s InnerOnly branch.
+#[tokio::test]
+async fn test_partial_reflection_hex_extract() {
+    let addr = start_test_server().await;
+    let mut args = base_scan_args();
+    args.targets = vec![format!("http://{addr}/extract/hex?q=test")];
+    let (_findings, count) = run_scan_and_count(args).await;
+    assert!(
+        count > PARTIAL_REFLECTION_BASELINE_REQUESTS,
+        "[hex-extract] expected >{} requests, got {}",
+        PARTIAL_REFLECTION_BASELINE_REQUESTS,
+        count
+    );
 }
