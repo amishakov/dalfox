@@ -36,6 +36,102 @@ const COLLAPSE_EWMA_THRESHOLD: f64 = 0.85; // if sustained EWMA reflection ratio
 const COLLAPSE_MIN_ATTEMPTS: usize = 15; // need at least this many attempts before collapsing
 const COLLAPSE_MIN_REFLECTIONS: usize = 5; // and at least this many reflections
 
+/// Number of random sentinel param names probed up-front to detect
+/// "reflect-everything" pages. Three is enough to make the false-positive
+/// rate negligible while keeping the ceiling cost low (≤ 3 wasted requests).
+const SENTINEL_PROBE_COUNT: usize = 3;
+
+/// Sentinel parameter names — random-looking, namespace-prefixed strings
+/// that should never collide with real params on a normal application.
+/// If every one of these reflects, the page is echoing arbitrary input
+/// and there's no point iterating a wordlist.
+const SENTINEL_QUERY_NAMES: &[&str] = &[
+    "dlfx_sentinel_q_8a3f",
+    "dlfx_canary_b27z_p1",
+    "dlfx_probe_xx9k_z2",
+];
+
+/// Run sentinel probes against the target by injecting the marker into a
+/// query parameter named `name` and checking whether the response body
+/// (or redirect Location header) echoes the marker. Returns the first
+/// response body when every sentinel reflects, or `None` as soon as any
+/// sentinel fails to reflect — `None` is the "this page is fine, run the
+/// wordlist normally" signal.
+async fn pre_collapse_query_probe(client: &reqwest::Client, target: &Target) -> Option<String> {
+    let marker = crate::scanning::markers::open_marker();
+    let mut first_text: Option<String> = None;
+    for name in SENTINEL_QUERY_NAMES.iter().take(SENTINEL_PROBE_COUNT) {
+        let mut url = target.url.clone();
+        url.query_pairs_mut().append_pair(name, marker);
+        let req = crate::utils::build_request(
+            client,
+            target,
+            target.parse_method(),
+            url,
+            target.data.clone(),
+        );
+        crate::tick_request_count();
+        let resp = req.send().await.ok()?;
+        let location_has_marker = resp.status().is_redirection()
+            && resp
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok())
+                .map(|loc| loc.contains(marker))
+                .unwrap_or(false);
+        let text = resp.text().await.ok()?;
+        if !location_has_marker && !text.contains(marker) {
+            return None;
+        }
+        if first_text.is_none() {
+            first_text = Some(text);
+        }
+    }
+    first_text
+}
+
+/// Build the synthetic "any" Query param used as the lone discovered
+/// param when sentinel collapse fires. Mirrors the post-collapse path
+/// at the end of `probe_dictionary_params`.
+fn make_any_query_param(text: &str) -> Param {
+    let context = detect_injection_context(text);
+    let (valid, invalid) = crate::parameter_analysis::classify_special_chars(text);
+    Param {
+        name: "any".to_string(),
+        value: crate::scanning::markers::open_marker().to_string(),
+        location: Location::Query,
+        injection_context: Some(context),
+        valid_specials: Some(valid),
+        invalid_specials: Some(invalid),
+        pre_encoding: None,
+        pre_encoding_pipeline: None,
+        wire_name: None,
+        form_action_url: None,
+        form_origin_url: None,
+    }
+}
+
+/// Replace every `Query`-located param in `reflection_params` with a single
+/// synthetic `any` param. Non-Query params (Body, Header, Path, JsonBody,
+/// Cookie, Fragment) are preserved. Mirrors the EWMA post-processing path
+/// so sentinel collapse and EWMA collapse produce identical downstream
+/// state — Stage 3-6 sees one Query injection point regardless of which
+/// route triggered the collapse.
+async fn collapse_to_any_query_param(
+    reflection_params: Arc<Mutex<Vec<Param>>>,
+    response_text: &str,
+) {
+    let mut guard = reflection_params.lock().await;
+    let non_query: Vec<Param> = guard
+        .iter()
+        .filter(|p| !matches!(p.location, Location::Query))
+        .cloned()
+        .collect();
+    guard.clear();
+    guard.extend(non_query);
+    guard.push(make_any_query_param(response_text));
+}
+
 #[derive(Debug)]
 struct MiningSampleStats {
     attempts: usize,
@@ -256,6 +352,27 @@ pub async fn probe_dictionary_params(
 
     if !loaded {
         params = GF_PATTERNS_PARAMS.iter().map(|s| s.to_string()).collect();
+    }
+
+    // Sentinel pre-probe: 3 unique random param names. If every one reflects,
+    // the page echoes arbitrary input and the wordlist would just balloon
+    // into Stage 3-6 cost. Replace it with a single "any" param and bail.
+    // Skip when the wordlist is small enough that the pre-probe is more
+    // expensive than just running it.
+    if params.len() > SENTINEL_PROBE_COUNT * 5
+        && let Some(text) = pre_collapse_query_probe(&client, target).await
+    {
+        if !silence {
+            eprintln!(
+                "[mining-collapse] sentinel pre-probe collapsed Query mining: \
+                 every random param name reflected; using single 'any' param"
+            );
+        }
+        collapse_to_any_query_param(reflection_params.clone(), &text).await;
+        if let Some(ref pb) = pb {
+            pb.finish_and_clear();
+        }
+        return;
     }
 
     if let Some(ref pb) = pb {
@@ -780,6 +897,27 @@ pub async fn probe_response_id_params(
             }
             set
         };
+
+        // Sentinel pre-probe — same rationale as Query mining: a
+        // reflect-everything page would mark every DOM-extracted name as
+        // reflected and balloon downstream cost. Threshold matches Query
+        // mining: only run when the candidate set exceeds the pre-probe
+        // ceiling.
+        if params_to_check.len() > SENTINEL_PROBE_COUNT * 5
+            && let Some(text) = pre_collapse_query_probe(&client, target).await
+        {
+            if !silence {
+                eprintln!(
+                    "[mining-collapse] sentinel pre-probe collapsed DOM mining: \
+                     every random param name reflected; using single 'any' param"
+                );
+            }
+            collapse_to_any_query_param(reflection_params.clone(), &text).await;
+            if let Some(ref pb) = pb {
+                pb.finish_and_clear();
+            }
+            return;
+        }
 
         if let Some(ref pb) = pb {
             pb.set_length(params_to_check.len() as u64);

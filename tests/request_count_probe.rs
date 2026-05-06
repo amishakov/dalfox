@@ -146,12 +146,26 @@ async fn handler_url_json(Query(p): Query<HashMap<String, String>>) -> impl Into
     ))
 }
 
+/// Reflect-everything page: dumps every query parameter into the response
+/// body. Without sentinel pre-collapse, dictionary mining would mark every
+/// wordlist entry as reflected, ballooning Stage 3-6 cost into the
+/// thousands of requests.
+async fn handler_echo_all(Query(p): Query<HashMap<String, String>>) -> impl IntoResponse {
+    let mut body = String::from("<!DOCTYPE html><html><body>");
+    for (k, v) in &p {
+        body.push_str(&format!("<p>{k}={v}</p>"));
+    }
+    body.push_str("</body></html>");
+    Html(body)
+}
+
 async fn start_server() -> SocketAddr {
     let app = Router::new()
         .route("/plain", get(handler_plain))
         .route("/b64", get(handler_b64_json))
         .route("/jwt", get(handler_jwt))
-        .route("/urljson", get(handler_url_json));
+        .route("/urljson", get(handler_url_json))
+        .route("/echo_all", get(handler_echo_all));
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
         .await
         .expect("bind");
@@ -218,4 +232,72 @@ async fn measure_request_counts() {
         format!("http://{addr}/plain?other=ignored"),
     )
     .await;
+
+    // Compare reflect-everything page with vs without dictionary mining
+    // disabled by the user. With mining ON, the sentinel pre-probe should
+    // catch the echo behavior and skip the wordlist.
+    let mut args_mining_on = make_args();
+    args_mining_on.skip_mining = false;
+    args_mining_on.skip_mining_dict = false;
+    args_mining_on.skip_mining_dom = false;
+    measure_with(
+        "echo_all (mining ON)",
+        format!("http://{addr}/echo_all?seed=hi"),
+        args_mining_on,
+    )
+    .await;
+
+    let mut args_mining_off = make_args();
+    args_mining_off.skip_mining = true;
+    args_mining_off.skip_mining_dict = true;
+    args_mining_off.skip_mining_dom = true;
+    measure_with(
+        "echo_all (mining OFF)",
+        format!("http://{addr}/echo_all?seed=hi"),
+        args_mining_off,
+    )
+    .await;
+
+    // Larger wordlist to amplify the sentinel benefit. Without sentinel,
+    // EWMA needs ≥15 attempts to collapse; with a 500-entry user wordlist
+    // the chunk-of-500 spawns all 500 tasks in flight before any collapse
+    // signal can stop them.
+    let big_wordlist_path =
+        std::env::temp_dir().join(format!("rcp_big_wordlist_{}.txt", std::process::id()));
+    let entries: Vec<String> = (0..500).map(|i| format!("custom_word_{}", i)).collect();
+    std::fs::write(&big_wordlist_path, entries.join("\n")).expect("write wordlist");
+
+    let mut args_big_dict = make_args();
+    args_big_dict.skip_mining = false;
+    args_big_dict.skip_mining_dict = false;
+    args_big_dict.skip_mining_dom = true;
+    args_big_dict.silence = false;
+    args_big_dict.mining_dict_word = Some(big_wordlist_path.to_string_lossy().to_string());
+    measure_with(
+        "echo_all (500-word dict)",
+        format!("http://{addr}/echo_all?seed=hi"),
+        args_big_dict,
+    )
+    .await;
+
+    let _ = std::fs::remove_file(&big_wordlist_path);
+}
+
+async fn measure_with(label: &str, target: String, mut args: ScanArgs) {
+    dalfox::REQUEST_COUNT.store(0, Ordering::Relaxed);
+    args.targets = vec![target.clone()];
+    let out_path = std::env::temp_dir().join(format!("rcp_{}_{}.json", label, std::process::id()));
+    args.output = Some(out_path.to_string_lossy().to_string());
+    scan::run_scan(&args).await;
+    let count = dalfox::REQUEST_COUNT.load(Ordering::Relaxed);
+    let findings_n = std::fs::read_to_string(&out_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v["findings"].as_array().map(|a| a.len()))
+        .unwrap_or(0);
+    let _ = std::fs::remove_file(&out_path);
+    println!(
+        "[{:24}] requests={:5}  findings={}  target={}",
+        label, count, findings_n, target
+    );
 }
