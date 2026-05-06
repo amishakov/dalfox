@@ -791,6 +791,15 @@ nav.pagination a:hover {
     padding: 2.5rem 2rem;
     background: var(--bg-sidebar);
 }
+/* Docs pages: the sidebar is `position: fixed` and 268px wide, so a
+   root-level footer is hidden underneath it. Offset the footer (and only
+   the footer) on pages that actually have the docs layout. The mobile
+   rule in the @media block below reverts this once the sidebar slides
+   out of the document flow. The landing page has no `.docs-layout`, so
+   this selector is a no-op there and the footer spans full width. */
+body:has(.docs-layout) .site-footer {
+    margin-left: var(--sidebar-w);
+}
 .footer-inner {
     max-width: 1100px;
     margin: 0 auto;
@@ -1542,6 +1551,9 @@ nav.pagination a:hover {
     .docs-main {
         margin-left: 0;
         padding: 2rem 1.25rem 3rem;
+    }
+    body:has(.docs-layout) .site-footer {
+        margin-left: 0;
     }
     .hamburger {
         display: flex;
