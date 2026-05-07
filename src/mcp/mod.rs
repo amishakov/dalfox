@@ -341,10 +341,12 @@ pub struct ScanWithDalfoxParams {
     #[serde(default)]
     pub user_agent: Option<String>,
 
-    /// Path to a raw HTTP request file to extract cookies from (Cookie: header lines).
-    #[serde(default)]
-    pub cookie_from_raw: Option<String>,
-
+    // NOTE: `cookie_from_raw` (CLI flag --cookie-from-raw) is intentionally
+    // not exposed on the MCP API. It would let any caller drive a host-side
+    // file open via std::fs::read_to_string, with the matching `Cookie:`
+    // header lines forwarded to the attacker-supplied target URL — the same
+    // class of arbitrary file read addressed in v2 by GHSA-35wr-x7v6-9fv2.
+    // MCP callers can supply cookies directly via the `cookies` field.
     /// Encoding strategies to apply to payloads. Available: url, html, base64, 2url, 3url, 4url, none.
     /// Default: ["url", "html"]
     #[serde(default = "default_encoders")]
@@ -574,23 +576,11 @@ Final results (via get_results_dalfox) include finding type \
             ),
         );
 
-        // cookie_from_raw: read Cookie: line and append
-        let mut all_cookies = params.cookies.clone();
-        if let Some(raw_path) = &params.cookie_from_raw
-            && let Ok(content) = std::fs::read_to_string(raw_path)
-        {
-            for line in content.lines() {
-                if line.to_ascii_lowercase().starts_with("cookie:") {
-                    let rest = line.split_once(':').map(|x| x.1).unwrap_or("").trim();
-                    for part in rest.split(';') {
-                        let trimmed = part.trim();
-                        if trimmed.contains('=') {
-                            all_cookies.push(trimmed.to_string());
-                        }
-                    }
-                }
-            }
-        }
+        // Cookies come from the API field `cookies` only. The CLI's
+        // `cookie_from_raw` flag (which reads cookies from a server-side
+        // request file) is intentionally not honoured on the MCP path —
+        // see the comment on `ScanWithDalfoxParams::cookies` for the reason.
+        let all_cookies = params.cookies.clone();
 
         // Normalize encoders: if "none" present use only original payloads
         let encoders = if params.encoders.iter().any(|e| e == "none") {

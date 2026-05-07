@@ -33,7 +33,6 @@ fn default_scan_params(target: &str) -> ScanWithDalfoxParams {
         headers: vec![],
         cookies: vec![],
         user_agent: None,
-        cookie_from_raw: None,
         encoders: vec!["none".to_string()],
         timeout: 1,
         delay: 0,
@@ -303,32 +302,46 @@ async fn test_scan_with_dalfox_rejects_out_of_range_delay() {
     assert!(err.message.contains("delay must be between"));
 }
 
+// Regression: a JSON request that still tries to set `cookie_from_raw`
+// must not cause dalfox to open the supplied path. The field was removed
+// from the MCP scan tool to close a server-side arbitrary-file-read /
+// outbound-exfiltration vector matching v2's GHSA-35wr-x7v6-9fv2.
+//
+// serde's default behaviour silently drops unknown fields, so the
+// request still deserializes and the scan still queues — but the host
+// filesystem is never touched, even when the caller points the field at
+// a sentinel "must not be read" path.
 #[tokio::test]
-async fn test_scan_with_dalfox_handles_cookie_from_raw() {
+async fn test_scan_with_dalfox_ignores_cookie_from_raw_field() {
     let mcp = DalfoxMcp::new();
-    let cookie_file = std::env::temp_dir().join(format!(
-        "dalfox-mcp-cookie-{}.txt",
-        crate::utils::make_scan_id("cookie-raw")
-    ));
-    std::fs::write(
-        &cookie_file,
-        "GET / HTTP/1.1\nHost: example.com\nCookie: sid=abc; uid=def\n",
-    )
-    .expect("write cookie raw");
-
-    let params = ScanWithDalfoxParams {
-        cookie_from_raw: Some(cookie_file.to_string_lossy().to_string()),
-        ..default_scan_params("http://127.0.0.1:1/?q=a")
-    };
+    let body = serde_json::json!({
+        "target": "http://127.0.0.1:1/?q=a",
+        "method": "GET",
+        "encoders": ["none"],
+        "timeout": 1,
+        "delay": 0,
+        "follow_redirects": false,
+        "include_request": false,
+        "include_response": false,
+        "skip_mining": false,
+        "skip_discovery": false,
+        "deep_scan": false,
+        "skip_ast_analysis": false,
+        "workers": 1,
+        // Sentinel path that should never be opened. /dev/full would
+        // surface as an io error if the read code path resurrected.
+        "cookie_from_raw": "/dev/full",
+    });
+    let params: ScanWithDalfoxParams = serde_json::from_value(body)
+        .expect("unknown field cookie_from_raw should be ignored, not error");
     let resp = mcp
         .scan_with_dalfox(Parameters(params))
         .await
-        .expect("scan_with_dalfox should queue");
+        .expect("scan_with_dalfox should queue without reading cookie_from_raw");
 
     let payload = parse_result_json(&resp);
     assert_eq!(payload["status"], "queued");
     assert!(payload["scan_id"].as_str().is_some());
-    let _ = std::fs::remove_file(cookie_file);
 }
 
 #[tokio::test]
