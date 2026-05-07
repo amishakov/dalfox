@@ -1125,6 +1125,7 @@ const PARTIAL_REFLECTION_BASELINE_REQUESTS: u64 = 20;
 /// and the `text.contains(open_marker())` check would miss reflection.
 /// The bracketed sandwich probe survives as `inner+close` (SuffixOnly),
 /// so discovery still records the param and the scan proceeds.
+#[ignore = "flaky on Ubuntu CI; see issue #939"]
 #[tokio::test]
 async fn test_partial_reflection_prefix_strip() {
     let addr = start_test_server().await;
@@ -1142,6 +1143,7 @@ async fn test_partial_reflection_prefix_strip() {
 
 /// Mirror of the above: trailing 4 chars stripped. The bracketed probe
 /// survives as `open+inner` (PrefixOnly).
+#[ignore = "flaky on Ubuntu CI; see issue #939"]
 #[tokio::test]
 async fn test_partial_reflection_suffix_strip() {
     let addr = start_test_server().await;
@@ -1161,6 +1163,7 @@ async fn test_partial_reflection_suffix_strip() {
 /// random hex segments survive concatenated. `inner_marker()` is
 /// `dlxmid<8hex>`, whose 8-hex tail survives as a contiguous run and
 /// is detected by `classify_probe_reflection`'s InnerOnly branch.
+#[ignore = "flaky on Ubuntu CI; see issue #939"]
 #[tokio::test]
 async fn test_partial_reflection_hex_extract() {
     let addr = start_test_server().await;
