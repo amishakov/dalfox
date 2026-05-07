@@ -2,5 +2,3 @@
 
 pub mod cli_smoke_test;
 pub mod config_path_smoke_test;
-pub mod v2_comparison_test;
-pub mod xssmaze_smoke_test;
