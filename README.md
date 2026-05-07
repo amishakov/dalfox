@@ -9,6 +9,8 @@
   <a href="https://github.com/hahwul/dalfox/blob/main/CONTRIBUTING.md"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=for-the-badge&labelColor=%2330365e&color=%2330365e"></a>
 </p>
 
+> **Looking for the Go (v2.x) version?** Dalfox v3 is a complete rewrite in Rust. The Go codebase is preserved on the [`v2` branch](https://github.com/hahwul/dalfox/tree/v2) and continues to receive security backports. See [SECURITY.md](./SECURITY.md) for the support policy.
+
 Dalfox is a powerful open-source tool that focuses on automation, making it ideal for quickly scanning for XSS flaws and analyzing parameters. Its advanced testing engine and niche features are designed to streamline the process of detecting and verifying vulnerabilities.
 
 ## Key features
