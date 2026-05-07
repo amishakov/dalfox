@@ -1,5 +1,15 @@
 # Security Policy
 
+## Supported Versions
+
+| Version | Status |
+|---|---|
+| **v3.x** (Rust, current) | Fully supported — security and bug fixes land here. |
+| **v2.13.x** (Go, legacy) | Critical security backports only, on a best-effort basis. v2 will not receive new features or non-critical fixes. |
+| < v2.13 | Unsupported. Please upgrade. |
+
+The Go (v2.x) sources live on the [`v2` branch](https://github.com/hahwul/dalfox/tree/v2). All v3 development happens on `main`.
+
 ## Reporting a Vulnerability
 
 Found a security issue? Let us know so we can fix it.
