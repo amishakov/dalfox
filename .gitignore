@@ -12,5 +12,5 @@ docs/public
 
 ### Nix ###
 .direnv/
-result
-result-*
+/result
+/result-*
