@@ -32,7 +32,6 @@ use tokio::sync::Mutex;
 
 use rmcp::{
     ErrorData,
-    handler::server::tool::ToolRouter,
     handler::server::wrapper::Parameters,
     model::{CallToolResult, Content},
     tool, tool_handler, tool_router,
@@ -106,10 +105,14 @@ fn paginate_results(
 }
 
 /// MCP handler state.
+//
+// rmcp 1.x: `#[tool_router]` (line ~507) generates `Self::tool_router()` as an
+// inherent method, and `#[tool_handler]` calls it automatically. No router
+// field is needed; the 0.x pattern of storing `tool_router: ToolRouter<Self>`
+// became unused dead-code in 1.x.
 #[derive(Clone)]
 pub struct DalfoxMcp {
     jobs: Arc<Mutex<HashMap<String, Job>>>,
-    tool_router: ToolRouter<Self>,
 }
 
 impl Default for DalfoxMcp {
@@ -122,7 +125,6 @@ impl DalfoxMcp {
     pub fn new() -> Self {
         Self {
             jobs: Arc::new(Mutex::new(HashMap::new())),
-            tool_router: Self::tool_router(),
         }
     }
 
