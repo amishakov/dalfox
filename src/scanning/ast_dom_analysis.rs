@@ -1272,8 +1272,8 @@ impl<'a> DomXssVisitor<'a> {
         params
             .items
             .iter()
-            .filter_map(|param| match &param.pattern.kind {
-                BindingPatternKind::BindingIdentifier(id) => Some(id.name.to_string()),
+            .filter_map(|param| match &param.pattern {
+                BindingPattern::BindingIdentifier(id) => Some(id.name.to_string()),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -1541,7 +1541,7 @@ impl<'a> DomXssVisitor<'a> {
     /// Walk through a variable declarator
     fn walk_variable_declarator(&mut self, decl: &VariableDeclarator<'a>) {
         if let Some(init) = &decl.init {
-            if let BindingPatternKind::BindingIdentifier(id) = &decl.id.kind {
+            if let BindingPattern::BindingIdentifier(id) = &decl.id {
                 let var_name = id.name.as_str();
                 self.clear_url_search_params_field_sources(var_name);
 
@@ -1777,12 +1777,12 @@ impl<'a> DomXssVisitor<'a> {
             }
 
             // Handle object destructuring: const { a, b } = tainted → a, b all tainted
-            if let BindingPatternKind::ObjectPattern(obj_pat) = &decl.id.kind
+            if let BindingPattern::ObjectPattern(obj_pat) = &decl.id
                 && self.is_tainted(init)
             {
                 let source = self.find_source_in_expr(init);
                 for prop in &obj_pat.properties {
-                    if let BindingPatternKind::BindingIdentifier(id) = &prop.value.kind {
+                    if let BindingPattern::BindingIdentifier(id) = &prop.value {
                         let name = id.name.to_string();
                         self.tainted_vars.insert(name.clone());
                         self.global_taints.insert(name.clone());
@@ -1792,7 +1792,7 @@ impl<'a> DomXssVisitor<'a> {
                     }
                 }
                 if let Some(rest) = &obj_pat.rest
-                    && let BindingPatternKind::BindingIdentifier(id) = &rest.argument.kind
+                    && let BindingPattern::BindingIdentifier(id) = &rest.argument
                 {
                     let name = id.name.to_string();
                     self.tainted_vars.insert(name.clone());
@@ -1804,12 +1804,12 @@ impl<'a> DomXssVisitor<'a> {
             }
 
             // Handle array destructuring: const [a, b] = tainted → a, b all tainted
-            if let BindingPatternKind::ArrayPattern(arr_pat) = &decl.id.kind
+            if let BindingPattern::ArrayPattern(arr_pat) = &decl.id
                 && self.is_tainted(init)
             {
                 let source = self.find_source_in_expr(init);
                 for elem in arr_pat.elements.iter().flatten() {
-                    if let BindingPatternKind::BindingIdentifier(id) = &elem.kind {
+                    if let BindingPattern::BindingIdentifier(id) = &elem {
                         let name = id.name.to_string();
                         self.tainted_vars.insert(name.clone());
                         self.global_taints.insert(name.clone());
@@ -2166,7 +2166,7 @@ impl<'a> DomXssVisitor<'a> {
         match right {
             Expression::FunctionExpression(func) => {
                 if let Some(param) = func.params.items.first()
-                    && let BindingPatternKind::BindingIdentifier(id) = &param.pattern.kind
+                    && let BindingPattern::BindingIdentifier(id) = &param.pattern
                     && let Some(body) = &func.body
                 {
                     let event_source = self.message_event_source_for_receiver(receiver);
@@ -2175,7 +2175,7 @@ impl<'a> DomXssVisitor<'a> {
             }
             Expression::ArrowFunctionExpression(arrow) => {
                 if let Some(param) = arrow.params.items.first()
-                    && let BindingPatternKind::BindingIdentifier(id) = &param.pattern.kind
+                    && let BindingPattern::BindingIdentifier(id) = &param.pattern
                 {
                     let event_source = self.message_event_source_for_receiver(receiver);
                     self.walk_event_handler_body(
@@ -2387,7 +2387,7 @@ impl<'a> DomXssVisitor<'a> {
             if let Some(Argument::FunctionExpression(func)) = call.arguments.get(1) {
                 // Mark the first parameter as tainted (it's the event object)
                 if let Some(param) = func.params.items.first()
-                    && let BindingPatternKind::BindingIdentifier(id) = &param.pattern.kind
+                    && let BindingPattern::BindingIdentifier(id) = &param.pattern
                     && let Some(body) = &func.body
                     && let Some(event_source) = event_source.as_deref()
                 {
@@ -2398,7 +2398,7 @@ impl<'a> DomXssVisitor<'a> {
             // Also handle arrow functions
             if let Some(Argument::ArrowFunctionExpression(arrow)) = call.arguments.get(1)
                 && let Some(param) = arrow.params.items.first()
-                && let BindingPatternKind::BindingIdentifier(id) = &param.pattern.kind
+                && let BindingPattern::BindingIdentifier(id) = &param.pattern
                 && let Some(event_source) = event_source.as_deref()
             {
                 self.walk_event_handler_body(
